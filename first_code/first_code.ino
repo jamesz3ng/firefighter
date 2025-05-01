@@ -1,4 +1,3 @@
-
 #include <Servo.h>  //Need for Servo pulse output
 #include <SoftwareSerial.h>
 
@@ -40,7 +39,7 @@ const int TRIG_PIN = 48;
 const int ECHO_PIN = 49;
 // Anything over 400 cm (23200 us pulse) is "out of range". Hit:If you decrease to this the ranging sensor but the timeout is short, you may not need to read up to 4meters.
 const unsigned int MAX_DIST = 23200;
-double last_est_ultrasonic = 0;
+double front_distance = 0;
 double last_var_ultrasonic = 1;
 double process_noise_ultrasonic = 1;
 double sensor_noise_ultrasonic = 1;  // Change the value of sensor noise to get different KF performance
@@ -57,35 +56,35 @@ float gyroRate = 0;             // read out value of sensor in voltage
 float currentAngle = 0;         // current angle calculated by angular velocity integral on
 
 // IR
-const int rightIrPin = A12;   // Analog input pin for the sensor's output
+const int rightFrontIrPin = A12;   // Analog input pin for the sensor's output
 int rightIrSensorValue = 0;   // Variable to store the sensor reading
 float rightIrDistance = 0.0;  // Variable to store the calculated distance
-double last_est_ir_right = 0;
+double frontRightDist = 0;
 double last_var_ir_right = 1;
 double process_noise_ir_right = 1;
 double sensor_noise_ir_right = 1;  // Change the value of sensor noise to get different KF performance
 
-const int leftIrPin = A8;    // Analog input pin for the sensor's output
+const int leftFrontIrPin = A8;    // Analog input pin for the sensor's output
 int leftIrSensorValue = 0;   // Variable to store the sensor reading
 float leftIrDistance = 0.0;  // Variable to store the calculated distance
-double last_est_ir_left = 0;
+double frontLeftDist = 0;
 double last_var_ir_left = 1;
 double process_noise_ir_left = 1;
 double sensor_noise_ir_left = 1;  // Change the value of sensor noise to get different KF performance
 
-const int backIrPin = A7;    // Analog input pin for the sensor's output
+const int rightIrPin = A7;    // Analog input pin for the sensor's output
 int backIrSensorValue = 0;   // Variable to store the sensor reading
 float backIrDistance = 0.0;  // Variable to store the calculated distance
-double last_est_ir_back = 0;
+double sideRightDist = 0;
 double last_var_ir_back = 1;
 double process_noise_ir_back = 1;
 double sensor_noise_ir_back = 1;  // Change the value of sensor noise to get different KF performance
 float target_dist = 0;
 
-const int shortleftIrPin = A10;   // Analog input pin for the sensor's output
+const int leftIrPin = A10;   // Analog input pin for the sensor's output
 int shortleftIrSensorValue = 0;   // Variable to store the sensor reading
 float shortleftIrDistance = 0.0;  // Variable to store the calculated distance
-double last_est_ir_short_left = 0;
+double sideLeftDist = 0;
 double last_var_ir_short_left = 1;
 double process_noise_ir_short_left = 1;
 double sensor_noise_ir_short_left = 1;
@@ -94,11 +93,12 @@ double sensor_noise_ir_short_left = 1;
 // Function prototypes
 void calibrateGyro();
 void delaySeconds(int TimedDelaySeconds);
-void GYRO_reading();
-void HC_SR04_range();
-void Right_IR_range();
-void Left_IR_range();
-void Back_IR_range();
+void ReadGyro();
+void ReadUltrasonic();
+void ReadRightFront();
+void ReadLeftFront();
+void ReadRight();
+void ReadLeft();
 void enable_motors();
 void disable_motors();
 void stop();
@@ -114,9 +114,10 @@ double Kalman_ir_right(double rawdata, double prev_est);
 double Kalman_ir_left(double rawdata, double prev_est);
 double Kalman_ir_back(double rawdata, double prev_est);
 double Kalman_ir_short_left(double rawdata, double prev_est);
-void Short_Left_IR_range();
 STATE initialising();
 STATE stopped();
+STATE navigate();
+STATE extinguish();
 STATE check_gyro();
 
 void setup(void) {
@@ -148,15 +149,11 @@ void loop(void) {
       // SerialCom->println("STOPPED....");
       machine_state = stopped();
       break;
-    case GOD_SAVE_US:
-      machine_state = god_save_us();
-      break;
-    case CORNER:
-      machine_state = corner();
-      break;
     case EXTINGUISH:
+      machine_state = extinguish();
       break;
     case NAVIGATE:
+      machine_state = navigate();
       break;
     case CHECK_GYRO:
       machine_state = check_gyro();
@@ -170,12 +167,21 @@ STATE initialising() {
   SerialCom->println("Enabling Motors...");
   enable_motors();
 
-  for (int i_dont_know_what_to_name_this = 0; i_dont_know_what_to_name_this < 10; i_dont_know_what_to_name_this++) {
-    HC_SR04_range();
+  for (int i = 0; i < 10; i++) {
+    ReadUltrasonic();
     delay(100);
   }
   // return CHECK_GYRO;  // Changed from RIGHT to SEARCH_WALL
-  return GOD_SAVE_US;
+  return NAVIGATE;
+}
+
+STATE navigate() {
+
+  return NAVIGATE;
+}
+
+STATE extinguish() {
+  return EXTINGUISH;
 }
 
 
@@ -194,7 +200,7 @@ STATE check_gyro() {
 
     if (!is_battery_voltage_OK()) return STOPPED;
 
-    GYRO_reading();
+    ReadGyro();
 
     counter++;
 
@@ -308,7 +314,7 @@ boolean is_battery_voltage_OK() {
 }
 
 //----------------------Ultrasonic------------------------
-void HC_SR04_range() {
+void ReadUltrasonic() {
   unsigned long t1;
   unsigned long t2;
   unsigned long pulse_width;
@@ -351,13 +357,13 @@ void HC_SR04_range() {
   double distance = pulse_width / 58.0;
 
   // medianFilter2.AddValue(distance);
-  double est = Kalman_ultrasonic(distance, last_est_ultrasonic);
-  last_est_ultrasonic = est;
+  double est = Kalman_ultrasonic(distance, front_distance);
+  front_distance = est;
 }
 
 //----------------------IR------------------------
-void Right_IR_range() {
-  rightIrSensorValue = analogRead(rightIrPin);
+void ReadRightFront() {
+  rightIrSensorValue = analogRead(rightFrontIrPin);
 
   // Convert the sensor value to a voltage (assuming 5V reference voltage)
   float voltage = rightIrSensorValue * (5.0 / 1023.0);
@@ -366,12 +372,12 @@ void Right_IR_range() {
   // Note: this is a rough estimate based on sensor's datasheet.
   rightIrDistance = (25.5 * pow(voltage, -1.10));
 
-  double est = Kalman_ir_right(rightIrDistance, last_est_ir_right);
-  last_est_ir_right = est;
+  double est = Kalman_ir_right(rightIrDistance, frontRightDist);
+  frontRightDist = est;
 }
 
-void Left_IR_range() {
-  leftIrSensorValue = analogRead(leftIrPin);
+void ReadLeftFront() {
+  leftIrSensorValue = analogRead(leftFrontIrPin);
 
   // Convert the sensor value to a voltage (assuming 5V reference voltage)
   float voltage = leftIrSensorValue * (5.0 / 1023.0);
@@ -380,12 +386,12 @@ void Left_IR_range() {
   // Note: this is a rough estimate based on sensor's datasheet.
   leftIrDistance = (25.5 * pow(voltage, -1.10));
 
-  double est = Kalman_ir_left(leftIrDistance, last_est_ir_left);
-  last_est_ir_left = est;
+  double est = Kalman_ir_left(leftIrDistance, frontLeftDist);
+  frontLeftDist = est;
 }
 
-void Back_IR_range() {
-  backIrSensorValue = analogRead(backIrPin);
+void ReadRight() {
+  backIrSensorValue = analogRead(rightIrPin);
 
   // Convert the sensor value to a voltage (assuming 5V reference voltage)
   float voltage = backIrSensorValue * (5.0 / 1023.0);
@@ -394,8 +400,29 @@ void Back_IR_range() {
   // Note: this is a rough estimate based on sensor's datasheet.
   backIrDistance = 11.35795124 * pow(voltage, -0.7897);
 
-  double est = Kalman_ir_back(backIrDistance, last_est_ir_back);
-  last_est_ir_back = est;
+  double est = Kalman_ir_back(backIrDistance, sideRightDist);
+  sideRightDist = est;
+}
+
+void ReadLeft() {
+  // 1. Read ADC value
+  shortleftIrSensorValue = analogRead(leftIrPin);
+
+  // 2. Convert to voltage
+  float voltage = shortleftIrSensorValue * (5.0 / 1023.0);
+
+  // 3. Compute raw distance OR fallback if voltage is too low
+  if (voltage < 0.1) {
+    shortleftIrDistance = sideLeftDist;  // fallback to last estimate
+  } else {
+    shortleftIrDistance = 11.35795124 * pow(voltage, -0.7897);  // normal calculation
+  }
+
+  // 4. Kalman filter only if value is valid
+  if (!isnan(shortleftIrDistance)) {
+    double est = Kalman_ir_left(shortleftIrDistance, sideLeftDist);
+    sideLeftDist = est - 1.25;
+  }
 }
 
 double Kalman_ir_short_left(double rawdata, double prev_est) {  // Kalman Filter
@@ -412,40 +439,21 @@ double Kalman_ir_short_left(double rawdata, double prev_est) {  // Kalman Filter
 }
 
 
-void Short_Left_IR_range2() {
-  shortleftIrSensorValue = analogRead(shortleftIrPin);
+// void Short_Left_IR_range2() {
+//   shortleftIrSensorValue = analogRead(shortleftIrPin);
 
-  // Convert the sensor value to a voltage (assuming 5V reference voltage)
-  float voltage = shortleftIrSensorValue * (5.0 / 1023.0);
+//   // Convert the sensor value to a voltage (assuming 5V reference voltage)
+//   float voltage = shortleftIrSensorValue * (5.0 / 1023.0);
 
-  // Calculate the distance using the voltage (for Sharp GP2Y0A21YK0F, this is a typical formula)
-  // Note: this is a rough estimate based on sensor's datasheet.
-  shortleftIrDistance = (25.5 * pow(voltage, -1.10));
+//   // Calculate the distance using the voltage (for Sharp GP2Y0A21YK0F, this is a typical formula)
+//   // Note: this is a rough estimate based on sensor's datasheet.
+//   shortleftIrDistance = (25.5 * pow(voltage, -1.10));
 
-  double est = Kalman_ir_short_left(shortleftIrDistance, last_est_ir_short_left);
-  last_est_ir_short_left = est;
-}
+//   double est = Kalman_ir_short_left(shortleftIrDistance, sideLeftDist);
+//   sideLeftDist = est;
+// }
 
-void Short_Left_IR_range() {
-  // 1. Read ADC value
-  shortleftIrSensorValue = analogRead(shortleftIrPin);
 
-  // 2. Convert to voltage
-  float voltage = shortleftIrSensorValue * (5.0 / 1023.0);
-
-  // 3. Compute raw distance OR fallback if voltage is too low
-  if (voltage < 0.1) {
-    shortleftIrDistance = last_est_ir_short_left;  // fallback to last estimate
-  } else {
-    shortleftIrDistance = 11.35795124 * pow(voltage, -0.7897);  // normal calculation
-  }
-
-  // 4. Kalman filter only if value is valid
-  if (!isnan(shortleftIrDistance)) {
-    double est = Kalman_ir_left(shortleftIrDistance, last_est_ir_short_left);
-    last_est_ir_short_left = est - 1.25;
-  }
-}
 //----------------------Gyro------------------------
 void calibrateGyro() {
   int i;
@@ -461,7 +469,7 @@ void calibrateGyro() {
   gyroZeroVoltage = sum / 100;  // average the sum as the zero drifting
 }
 
-void GYRO_reading() {
+void ReadGyro() {
   gyroRate = (analogRead(gyroPin) * gyroSupplyVoltage) / 1023;
   // SerialCom->println(gyroRate);
   // find the voltage offset the value of voltage when gyro is zero (still)
