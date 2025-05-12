@@ -4,10 +4,13 @@
 
 enum STATE {
   INITIALISING,
+  DETECT_FIRE,
   NAVIGATE,
   EXTINGUISH,
   CHECK_GYRO,
-  STOPPED
+  STOPPED,
+  LEFT,
+  RIGHT
 };
 
 // Serial Data input pin
@@ -75,7 +78,7 @@ double sensor_noise_ir_left = 1;  // Change the value of sensor noise to get dif
 const int rightIrPin = A7;    // Analog input pin for the sensor's output
 int backIrSensorValue = 0;   // Variable to store the sensor reading
 float backIrDistance = 0.0;  // Variable to store the calculated distance
-double sideRightDist = 0;
+double rightDist = 0;
 double last_var_ir_back = 1;
 double process_noise_ir_back = 1;
 double sensor_noise_ir_back = 1;  // Change the value of sensor noise to get different KF performance
@@ -84,7 +87,7 @@ float target_dist = 0;
 const int leftIrPin = A10;   // Analog input pin for the sensor's output
 int shortleftIrSensorValue = 0;   // Variable to store the sensor reading
 float shortleftIrDistance = 0.0;  // Variable to store the calculated distance
-double sideLeftDist = 0;
+double leftDist = 0;
 double last_var_ir_short_left = 1;
 double process_noise_ir_short_left = 1;
 double sensor_noise_ir_short_left = 1;
@@ -145,6 +148,10 @@ void loop(void) {
       // SerialCom->println("INITIALISING....");
       machine_state = initialising();
       break;
+    case DETECT_FIRE:
+      machine_state = detect_fire();
+
+    break;
     case STOPPED:
       // SerialCom->println("STOPPED....");
       machine_state = stopped();
@@ -154,6 +161,12 @@ void loop(void) {
       break;
     case NAVIGATE:
       machine_state = navigate();
+      break;
+    case LEFT:
+      machine_state = left();
+      break;
+    case RIGHT:
+      machine_state = right();
       break;
     case CHECK_GYRO:
       machine_state = check_gyro();
@@ -175,12 +188,97 @@ STATE initialising() {
   return NAVIGATE;
 }
 
-STATE navigate() {
+STATE detect_fire() {
+  // TODO: look around until fire is found
 
+  // TODO: rotate to face the fire
+
+  // TODO: when facing the fire, return NAVIGATE
+
+  return DETECT_FIRE;
+}
+
+STATE navigate() {
+  static unsigned long previous_millis;
+  if (millis() - previous_millis > T) {  //Arduino style 100ms timed execution statement
+    previous_millis = millis();
+
+    if (!is_battery_voltage_OK()) return STOPPED;
+    
+    ReadUltrasonic();
+    ReadLeftFront();
+    ReadRightFront();
+
+    if (frontLeftDist <20) {
+      return RIGHT;
+    } else if (frontRightDist<20) {
+      return LEFT;
+    } else if (front_distance) {
+      return LEFT;
+    } else {
+    forward();
+    }
+  }
   return NAVIGATE;
+
+  // TODO: find fire
+}
+
+STATE left() {
+  static unsigned long previous_millis;
+  if (millis() - previous_millis > T) {  //Arduino style 100ms timed execution statement
+    previous_millis = millis();
+
+    if (!is_battery_voltage_OK()) return STOPPED;
+    
+    ReadLeftFront();
+    ReadRightFront();
+    ReadLeft();
+    ReadUltrasonic();
+
+    if (leftDist <15) {
+      return RIGHT;
+    }
+
+    if ((frontLeftDist<20) && (frontRightDist<20) && (front_distance<20)) {
+      return NAVIGATE;
+    } else {
+      strafe_left();
+    }
+  }
+  return LEFT;
+}
+
+STATE right() {
+  static unsigned long previous_millis;
+  if (millis() - previous_millis > T) {  //Arduino style 100ms timed execution statement
+    previous_millis = millis();
+
+    if (!is_battery_voltage_OK()) return STOPPED;
+    
+    ReadLeftFront();
+    ReadRightFront();
+    ReadRight();
+    ReadUltrasonic();
+
+    if (rightDist <15) {
+      return LEFT;
+    }
+    if ((frontLeftDist<20) && (frontRightDist<20) && (front_distance<20)) {
+      return NAVIGATE;
+    } else {
+      strafe_right();
+    }
+  }
+  return RIGHT;
 }
 
 STATE extinguish() {
+  // TODO: turn the fan on for 10 seconds
+
+  // TODO: turn the fan off if fire is extinguished before 10 seconds
+
+  // TODO: find another fire, or stop the robot if two fire have been extinguished.
   return EXTINGUISH;
 }
 
@@ -401,7 +499,7 @@ void ReadRight() {
   backIrDistance = 11.35795124 * pow(voltage, -0.7897);
 
   double est = Kalman_ir_back(backIrDistance, sideRightDist);
-  sideRightDist = est;
+  rightDist = est;
 }
 
 void ReadLeft() {
@@ -421,7 +519,7 @@ void ReadLeft() {
   // 4. Kalman filter only if value is valid
   if (!isnan(shortleftIrDistance)) {
     double est = Kalman_ir_left(shortleftIrDistance, sideLeftDist);
-    sideLeftDist = est - 1.25;
+    leftDist = est - 1.25;
   }
 }
 
