@@ -63,7 +63,7 @@ float gyroRate = 0;             // read out value of sensor in voltage
 float currentAngle = 0;         // current angle calculated by angular velocity integral on
 
 // IR
-const int rightFrontIrPin = A12;  // Analog input pin for the sensor's output
+const int rightFrontIrPin = A1;  // Analog input pin for the sensor's output
 int rightIrSensorValue = 0;       // Variable to store the sensor reading
 float rightIrDistance = 0.0;      // Variable to store the calculated distance
 double frontRightDist = 0;
@@ -71,7 +71,7 @@ double last_var_ir_right = 1;
 double process_noise_ir_right = 1;
 double sensor_noise_ir_right = 1;  // Change the value of sensor noise to get different KF performance
 
-const int leftFrontIrPin = A8;  // Analog input pin for the sensor's output
+const int leftFrontIrPin = A0;  // Analog input pin for the sensor's output
 int leftIrSensorValue = 0;      // Variable to store the sensor reading
 float leftIrDistance = 0.0;     // Variable to store the calculated distance
 double frontLeftDist = 0;
@@ -79,7 +79,7 @@ double last_var_ir_left = 1;
 double process_noise_ir_left = 1;
 double sensor_noise_ir_left = 1;  // Change the value of sensor noise to get different KF performance
 
-const int rightIrPin = A7;   // Analog input pin for the sensor's output
+const int rightIrPin = A3;   // Analog input pin for the sensor's output
 int backIrSensorValue = 0;   // Variable to store the sensor reading
 float backIrDistance = 0.0;  // Variable to store the calculated distance
 double rightDist = 0;
@@ -88,7 +88,7 @@ double process_noise_ir_back = 1;
 double sensor_noise_ir_back = 1;  // Change the value of sensor noise to get different KF performance
 float target_dist = 0;
 
-const int leftIrPin = A10;        // Analog input pin for the sensor's output
+const int leftIrPin = A2;        // Analog input pin for the sensor's output
 int shortleftIrSensorValue = 0;   // Variable to store the sensor reading
 float shortleftIrDistance = 0.0;  // Variable to store the calculated distance
 double leftDist = 0;
@@ -135,13 +135,14 @@ void setup(void) {
   SerialCom = &BluetoothSerial;
   // SerialCom = &Serial;
 
-  SerialCom->begin(115200);
+  Serial.begin(115200);
+  // SerialCom->begin(115200);
   delaySeconds(STARTUP_DELAY);
-  SerialCom->println("MECHENG706");
-  SerialCom->println("Setup....");
+  // SerialCom->println("MECHENG706");
+  // SerialCom->println("Setup....");
   calibrateGyro();
 
-  delay(2000);
+  delay(50);
 }
 
 void loop(void) {
@@ -202,7 +203,7 @@ STATE detect_fire() {
   // TODO: rotate to face the fire
 
   // TODO: when facing the fire, return NAVIGATE
-
+  
   static unsigned long previous_millis;
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
@@ -244,19 +245,24 @@ STATE navigate() {
     ReadUltrasonic();
     ReadLeftFront();
     ReadRightFront();
+    Serial.println("in navigate.");
+    Serial.print("ultrasonic distance  ");
+    Serial.println(front_distance);
 
     if (frontLeftDist < 20) {
       return RIGHT;
     } else if (frontRightDist < 20) {
+      Serial.println("left IR hit");
       return LEFT;
-    } else if (front_distance) {
+    } else if (front_distance < 20) {
+      Serial.println("ultrasonic hit");
       return LEFT;
     } else {
+      Serial.println("hello");
       forward();
     }
   }
   return NAVIGATE;
-
   // TODO: find fire
 }
 
@@ -265,8 +271,8 @@ STATE left() {
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
-    if (!is_battery_voltage_OK())
-      return STOPPED;
+    // if (!is_battery_voltage_OK())
+    //   return STOPPED;
 
     ReadLeftFront();
     ReadRightFront();
@@ -277,7 +283,7 @@ STATE left() {
       return RIGHT;
     }
 
-    if ((frontLeftDist < 20) && (frontRightDist < 20) && (front_distance < 20)) {
+    if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
       return NAVIGATE;
     } else {
       strafe_left();
@@ -299,10 +305,10 @@ STATE right() {
     ReadRight();
     ReadUltrasonic();
 
-    if (rightDist < 15) {
-      return LEFT;
-    }
-    if ((frontLeftDist < 20) && (frontRightDist < 20) && (front_distance < 20)) {
+    // if (rightDist < 15) {
+    //   return LEFT;
+    // }
+    if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
       return NAVIGATE;
     } else {
       strafe_right();
