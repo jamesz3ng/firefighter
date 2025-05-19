@@ -1,6 +1,10 @@
 #include <Servo.h>  //Need for Servo pulse output
 #include <SoftwareSerial.h>
 
+// Investment thing
+// https://kernelwealth.co.nz/funds/kernel-high-growth-fund
+// schneider opens July
+
 enum STATE {
   INITIALISING,
   DETECT_FIRE,
@@ -250,12 +254,15 @@ STATE navigate() {
     Serial.println(front_distance);
 
     if (frontLeftDist < 20) {
+      stop();
       return RIGHT;
     } else if (frontRightDist < 20) {
       Serial.println("left IR hit");
+      stop();
       return LEFT;
     } else if (front_distance < 20) {
       Serial.println("ultrasonic hit");
+      stop();
       return LEFT;
     } else {
       Serial.println("hello");
@@ -278,12 +285,16 @@ STATE left() {
     ReadRightFront();
     ReadLeft();
     ReadUltrasonic();
+    Serial.print("ultrasonic distance  ");
+    Serial.println(front_distance);
 
     if (leftDist < 15) {
+      stop();
       return RIGHT;
     }
 
     if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
+    stop();
       return NAVIGATE;
     } else {
       strafe_left();
@@ -304,6 +315,8 @@ STATE right() {
     ReadRightFront();
     ReadRight();
     ReadUltrasonic();
+    Serial.print("ultrasonic distance  ");
+    Serial.println(front_distance);
 
     // if (rightDist < 15) {
     //   return LEFT;
@@ -665,6 +678,7 @@ void stop() {
 }
 
 void forward() {
+  SerialCom->println("MECHENG706");
   left_font_motor.writeMicroseconds(1500 + speed_val);
   left_rear_motor.writeMicroseconds(1500 + speed_val);
   right_rear_motor.writeMicroseconds(1500 - speed_val);
