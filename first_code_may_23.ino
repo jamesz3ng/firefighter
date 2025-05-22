@@ -29,9 +29,9 @@ SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 #define PHOTOTRANSISTOR_THRESHOLD 0.10
 // Serial Pointer
 
-HardwareSerial *SerialCom;
+// HardwareSerial *SerialCom;
 
-// SoftwareSerial *SerialCom;
+SoftwareSerial *SerialCom;
 
 // Default motor control pins
 const byte left_front = 46;
@@ -68,8 +68,8 @@ float currentAngle = 0;         // current angle calculated by angular velocity 
 
 // IR
 const int rightFrontIrPin = A1;  // Analog input pin for the sensor's output
-int rightIrSensorValue = 0;       // Variable to store the sensor reading
-float rightIrDistance = 0.0;      // Variable to store the calculated distance
+int rightIrSensorValue = 0;      // Variable to store the sensor reading
+float rightIrDistance = 0.0;     // Variable to store the calculated distance
 double frontRightDist = 0;
 double last_var_ir_right = 1;
 double process_noise_ir_right = 1;
@@ -92,7 +92,7 @@ double process_noise_ir_back = 1;
 double sensor_noise_ir_back = 1;  // Change the value of sensor noise to get different KF performance
 float target_dist = 0;
 
-const int leftIrPin = A2;        // Analog input pin for the sensor's output
+const int leftIrPin = A2;         // Analog input pin for the sensor's output
 int shortleftIrSensorValue = 0;   // Variable to store the sensor reading
 float shortleftIrDistance = 0.0;  // Variable to store the calculated distance
 double leftDist = 0;
@@ -136,8 +136,8 @@ STATE check_gyro();
 void setup(void) {
 
   // Setup the Serial port and pointer, the pointer allows switching the debug info through the USB port(Serial) or Bluetooth port(Serial1) with ease.
-  // SerialCom = &BluetoothSerial;
-  SerialCom = &Serial;
+  SerialCom = &BluetoothSerial;
+  // SerialCom = &Serial;
 
   SerialCom->begin(115200);
   // SerialCom->begin(115200);
@@ -153,37 +153,39 @@ void loop(void) {
 
   ReadUltrasonic();
   SerialCom->println(front_distance);
+  ReadLeftFront();
+  ReadRightFront();
   delay(100);
-  // static STATE machine_state = INITIALISING;
-  // // Finite-state machine Code
-  // switch (machine_state) {
-  //   case INITIALISING:
-  //     // SerialCom->println("INITIALISING....");
-  //     machine_state = initialising();
-  //     break;
-  //   case DETECT_FIRE:
-  //     machine_state = detect_fire();
+  static STATE machine_state = INITIALISING;
+  // Finite-state machine Code
+  switch (machine_state) {
+    case INITIALISING:
+      // SerialCom->println("INITIALISING....");
+      machine_state = initialising();
+      break;
+    case DETECT_FIRE:
+      machine_state = detect_fire();
 
-  //     break;
-  //   case STOPPED:
-  //     // SerialCom->println("STOPPED....");
-  //     machine_state = stopped();
-  //     break;
-  //   case EXTINGUISH:
-  //     machine_state = extinguish();
-  //     break;
-  //   case NAVIGATE:
-  //     machine_state = navigate();
-  //     break;
-  //   case LEFT:
-  //     machine_state = left();
-  //     break;
-  //   case RIGHT:
-  //     machine_state = right();
-  //     break;
-  //   case CHECK_GYRO:
-  //     machine_state = check_gyro();
-  // };
+      break;
+    case STOPPED:
+      // SerialCom->println("STOPPED....");
+      machine_state = stopped();
+      break;
+    case EXTINGUISH:
+      machine_state = extinguish();
+      break;
+    case NAVIGATE:
+      machine_state = navigate();
+      break;
+    case LEFT:
+      machine_state = left();
+      break;
+    case RIGHT:
+      machine_state = right();
+      break;
+    case CHECK_GYRO:
+      machine_state = check_gyro();
+  };
 }
 
 //-------------------------------States---------------------------------
@@ -210,7 +212,7 @@ STATE detect_fire() {
   // TODO: rotate to face the fire
 
   // TODO: when facing the fire, return NAVIGATE
-  
+
   static unsigned long previous_millis;
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
@@ -252,21 +254,22 @@ STATE navigate() {
     ReadUltrasonic();
     ReadLeftFront();
     ReadRightFront();
-    SerialCom->println("in navigate.");
-    SerialCom->print("ultrasonic distance  ");
-    SerialCom->println(front_distance);
+    // SerialCom->println("in navigate.");
+    // SerialCom->print("ultrasonic distance  ");
+    // SerialCom->println(front_distance);
 
     if (frontLeftDist < 20) {
       stop();
-      return NAVIGATE;
+      SerialCom->println("front left hit");
+      return RIGHT;
     } else if (frontRightDist < 20) {
-      SerialCom->println("left IR hit");
+      SerialCom->println("right IR hit");
       stop();
-      return NAVIGATE;
+      return LEFT;
     } else if (front_distance < 20) {
       SerialCom->println("ultrasonic hit");
       stop();
-      return NAVIGATE;
+      return LEFT;
     } else {
       SerialCom->println("hello");
       forward();
@@ -278,6 +281,7 @@ STATE navigate() {
 
 STATE left() {
   static unsigned long previous_millis;
+  int counting_time = 0;
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
@@ -297,8 +301,10 @@ STATE left() {
     }
 
     if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
-    stop();
-      return NAVIGATE;
+      stop();
+      counting_time++;
+      if (counting_time > 5)
+        return NAVIGATE;
     } else {
       strafe_left();
     }
@@ -325,6 +331,7 @@ STATE right() {
     //   return LEFT;
     // }
     if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
+      SerialCom->println("Activate Navigate");
       return NAVIGATE;
     } else {
       strafe_right();
@@ -536,6 +543,8 @@ void ReadRightFront() {
 
   double est = Kalman_ir_right(rightIrDistance, frontRightDist);
   frontRightDist = est;
+  SerialCom->print("right  ");
+  SerialCom->println(frontRightDist);
 }
 
 void ReadLeftFront() {
@@ -550,6 +559,9 @@ void ReadLeftFront() {
 
   double est = Kalman_ir_left(leftIrDistance, frontLeftDist);
   frontLeftDist = est;
+
+  SerialCom->print("left  ");
+  SerialCom->println(frontLeftDist);
 }
 
 void ReadRight() {
