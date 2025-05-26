@@ -1,5 +1,12 @@
 #include <Servo.h>
 
+enum STATE {
+  INITIALISING,
+  DETECT_FIRE,
+  DRIVE_TO_FIRE,
+  STOPPED,
+};
+
 Servo left_font_motor;   // create servo object to control Vex Motor Controller 29
 Servo left_rear_motor;   // create servo object to control Vex Motor Controller 29
 Servo right_rear_motor;  // create servo object to control Vex Motor Controller 29
@@ -19,7 +26,7 @@ const int LEFT_PHOTOTRANSISTOR = A9;
 const int RIGHT_PHOTOTRANSISTOR = A10;
 
 // System parameters
-const float ACTIVATION_THRESHOLD = 0.05;  // Minimum voltage difference to react
+const float ACTIVATION_THRESHOLD = 0.5;  // Minimum voltage difference to react
 const int START_ANGLE = 90;               // Initial servo position
 const int ANGLE_INCREMENT = 1;            // Degree change per adjustment
 const int SERVO_MIN = 0;                  // Minimum servo angle
@@ -109,6 +116,13 @@ void stop() {
   right_font_motor.writeMicroseconds(1500);
 }
 
+void cw() {
+  left_font_motor.writeMicroseconds(1500 + speed_val);
+  left_rear_motor.writeMicroseconds(1500 + speed_val);
+  right_rear_motor.writeMicroseconds(1500 + speed_val);
+  right_font_motor.writeMicroseconds(1500 + speed_val);
+}
+
 void enable_motors() {
   left_font_motor.attach(left_front);    // attaches the servo on pin left_front to turn Vex Motor Controller 29 On
   left_rear_motor.attach(left_rear);     // attaches the servo on pin left_rear to turn Vex Motor Controller 29 On
@@ -130,7 +144,6 @@ void disable_motors() {
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Light tracking system initialized");
   
   trackerServo.attach(SERVO_PIN);
   trackerServo.write(START_ANGLE);
@@ -140,11 +153,70 @@ void setup() {
   pinMode(ECHO_PIN, INPUT);
 }
 
-void loop() {
+void loop(void) {
+
+  static STATE machine_state = INITIALISING;
+  //Finite-state machine Code
+  switch (machine_state) {
+    case INITIALISING:
+      machine_state = initialising();
+      break;
+    case DETECT_FIRE:
+      machine_state = detect_fire();
+      break;
+    case DRIVE_TO_FIRE:
+      machine_state = drive_to_fire();
+      break;
+    case STOPPED:
+      machine_state = stopped();
+      break;
+  };
+}
+
+STATE initialising() {
+  enable_motors();
+
+  for (int i = 0; i < 10; i++) {
+    readUltrasonic();
+    delay(50);
+  }
+
+  return DETECT_FIRE;
+}
+
+STATE detect_fire() {
+  static unsigned long previous_millis;
+  static unsigned int counter = 0;
+
+  if (millis() - previous_millis > T) {
+    previous_millis = millis();
+    counter++;
+    if (counter > 10) {
+      float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+      float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+
+      cw();
+
+      if (leftVoltage > 0.25 && rightVoltage > 0.25){
+        if (abs(leftVoltage - rightVoltage) < 0.5){
+          stop();
+          counter = 0;
+          return DRIVE_TO_FIRE;
+        }
+      }
+    }
+  }
+  return DETECT_FIRE;
+}
+
+STATE drive_to_fire() {
   static unsigned long previous_millis;
   static int currentAngle = START_ANGLE;  // Preserve angle between iterations
+  static unsigned int counter = 0;
   
   if (millis() - previous_millis > T) {
+    previous_millis = millis();
+    counter++;
     // Read light sensors
     float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
     float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
@@ -152,29 +224,38 @@ void loop() {
 
     readUltrasonic();
 
-    // Only adjust if difference exceeds threshold
-    if (abs(difference) > ACTIVATION_THRESHOLD) {
-      if (difference > 0) {
-        currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
-      } else {
-        currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+    if (counter > 10) {
+      // Only adjust if difference exceeds threshold
+      if (abs(difference) > ACTIVATION_THRESHOLD) {
+        if (difference > 0) {
+          currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+        } else {
+          currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+        }
+        trackerServo.write(currentAngle);
       }
-      trackerServo.write(currentAngle);
-    }
 
-    if (front_distance > 10) {
-      float correction_kp = 10.0;
-      float error = currentAngle-90;
+      if (front_distance > 10) {
+        float correction_kp = 5.0;
+        float error = currentAngle-90;
 
-      float correction_factor = correction_kp * error;
-      left_font_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-      left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-      right_font_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-      right_rear_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-    } else {
-      stop();
-      disable_motors();
-      trackerServo.detach();
+        float correction_factor = correction_kp * error;
+        left_font_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_font_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_rear_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+      } else {
+        stop();
+        counter = 0;
+        return STOPPED;
+      }  
     }
   }
+  return DRIVE_TO_FIRE;
+}
+
+STATE stopped() {
+  disable_motors();
+  trackerServo.detach();
+  return STOPPED;
 }
