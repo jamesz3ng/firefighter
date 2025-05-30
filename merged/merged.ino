@@ -8,6 +8,7 @@
 enum STATE {
   INITIALISING,
   DETECT_FIRE,
+  DRIVE_TO_FIRE,
   NAVIGATE,
   EXTINGUISH,
   CHECK_GYRO,
@@ -214,86 +215,76 @@ STATE initialising() {
   // return CHECK_GYRO;  // Changed from RIGHT to SEARCH_WALL
   return DETECT_FIRE;  // Start by looking for fire
 }
-
 STATE detect_fire() {
   static unsigned long previous_millis;
-  static unsigned int rotation_counter = 0;
-  static bool searching_for_fire = true;
-  
-  if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
+  static unsigned int counter = 0;
+
+  if (millis() - previous_millis > T) {
     previous_millis = millis();
+    counter++;
+    if (counter > 10) {
+      float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+      float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
 
-    if (!is_battery_voltage_OK())
-      return STOPPED;
+      cw();
 
-    float left_photo_reading = getVoltage(LEFT_PHOTOTRANSISTOR);
-    float right_photo_reading = getVoltage(RIGHT_PHOTOTRANSISTOR);
-    
-    Serial.print("Left Reading: ");
-    Serial.print(left_photo_reading);
-    Serial.print(" | Right Reading: ");
-    Serial.println(right_photo_reading);
-
-    // Phase 1: Search for fire by rotating
-    if (searching_for_fire) {
-      cw();  // Rotate clockwise to search
-      rotation_counter++;
-      
-      // Check if we see fire (both sensors detect light above threshold)
-      if (left_photo_reading > MIN_FIRE_VOLTAGE && right_photo_reading > MIN_FIRE_VOLTAGE) {
-        stop();
-        searching_for_fire = false;
-        rotation_counter = 0;
-        Serial.println("Fire detected! Starting alignment...");
-      }
-      
-      // If we've rotated for too long without finding fire, give up
-      if (rotation_counter > 100) {  // 10 seconds at 100ms intervals
-        Serial.println("No fire found after full rotation");
-        return NAVIGATE;  // Go to navigation mode to explore
-      }
-    }
-    // Phase 2: Align with fire
-    else {
-      float difference = left_photo_reading - right_photo_reading;
-      
-      // Check if we're aligned (both sensors see similar light levels)
-      if (abs(difference) < ACTIVATION_THRESHOLD) {
-        stop();
-        fire_detected = true;
-        fire_servo_angle = current_servo_angle;  // Remember this angle
-        Serial.println("Fire aligned! Transitioning to navigate...");
-        return NAVIGATE;
-      }
-      
-      // Adjust servo to track fire
-      if (abs(difference) > ACTIVATION_THRESHOLD) {
-        if (difference > 0) {
-          // More light on left, turn servo right
-          current_servo_angle = constrain(current_servo_angle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
-        } else {
-          // More light on right, turn servo left
-          current_servo_angle = constrain(current_servo_angle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+      if (leftVoltage > 0.25 && rightVoltage > 0.25){
+        if (abs(leftVoltage - rightVoltage) < 0.5){
+          stop();
+          counter = 0;
+          return DRIVE_TO_FIRE;
         }
-        myservo.write(current_servo_angle);
-      }
-      
-      // Also adjust robot orientation slightly for better alignment
-      if (difference > ACTIVATION_THRESHOLD) {
-        // Fire is more to the left, rotate left slightly
-        ccw();
-        delay(20);  // Brief rotation
-        stop();
-      } else if (difference < -ACTIVATION_THRESHOLD) {
-        // Fire is more to the right, rotate right slightly
-        cw();
-        delay(20);  // Brief rotation
-        stop();
       }
     }
   }
   return DETECT_FIRE;
 }
+
+STATE drive_to_fire() {
+  static unsigned long previous_millis;
+  static int currentAngle = START_ANGLE;  // Preserve angle between iterations
+  static unsigned int counter = 0;
+  
+  if (millis() - previous_millis > T) {
+    previous_millis = millis();
+    counter++;
+    // Read light sensors
+    float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+    float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+    float difference = leftVoltage - rightVoltage;
+
+    readUltrasonic();
+
+    if (counter > 10) {
+      // Only adjust if difference exceeds threshold
+      if (abs(difference) > ACTIVATION_THRESHOLD) {
+        if (difference > 0) {
+          currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+        } else {
+          currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+        }
+        trackerServo.write(currentAngle);
+      }
+
+      if (front_distance > 10) {
+        float correction_kp = 5.0;
+        float error = currentAngle-90;
+
+        float correction_factor = correction_kp * error;
+        left_font_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_font_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_rear_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+      } else {
+        stop();
+        counter = 0;
+        return STOPPED;
+      }  
+    }
+  }
+  return DRIVE_TO_FIRE;
+}
+
 
 STATE navigate() {
   static unsigned long previous_millis;
