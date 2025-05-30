@@ -18,7 +18,7 @@ const byte left_front = 46;
 const byte left_rear = 47;
 const byte right_rear = 51;
 const byte right_front = 50;
-int speed_val = 70;
+int speed_val = 130;
 
 // Hardware configuration
 const int SERVO_PIN = 37;
@@ -26,7 +26,7 @@ const int LEFT_PHOTOTRANSISTOR = A9;
 const int RIGHT_PHOTOTRANSISTOR = A10;
 
 // System parameters
-const float ACTIVATION_THRESHOLD = 0.5;  // Minimum voltage difference to react
+const float ACTIVATION_THRESHOLD = 0.1;  // Minimum voltage difference to react
 const int START_ANGLE = 90;               // Initial servo position
 const int ANGLE_INCREMENT = 1;            // Degree change per adjustment
 const int SERVO_MIN = 0;                  // Minimum servo angle
@@ -197,8 +197,8 @@ STATE detect_fire() {
 
       cw();
 
-      if (leftVoltage > 0.25 && rightVoltage > 0.25){
-        if (abs(leftVoltage - rightVoltage) < 0.5){
+      if (leftVoltage > 0.14 && rightVoltage > 0.14){
+        if (abs(leftVoltage - rightVoltage) < 0.3){
           stop();
           counter = 0;
           return DRIVE_TO_FIRE;
@@ -226,14 +226,12 @@ STATE drive_to_fire() {
 
     if (counter > 10) {
       // Only adjust if difference exceeds threshold
-      if (abs(difference) > ACTIVATION_THRESHOLD) {
         if (difference > 0) {
           currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
         } else {
           currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
         }
         trackerServo.write(currentAngle);
-      }
 
       if (front_distance > 10) {
         float correction_kp = 5.0;
