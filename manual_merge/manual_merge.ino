@@ -260,11 +260,11 @@ STATE detect_fire() {
     if (counter > 10) {
       float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
       float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-      speed_val = 70;
+      speed_val = 130;
       cw();
       speed_val = 200;
       if (leftVoltage > 0.13 && rightVoltage > 0.13) {
-        if (abs(leftVoltage - rightVoltage) < 0.5) {
+        if (abs(leftVoltage - rightVoltage) < 0.3) {
           stop();
           counter = 0;
           return DRIVE_TO_FIRE;
@@ -292,16 +292,14 @@ STATE drive_to_fire() {
 
     if (counter > 10) {
       // Only adjust if difference exceeds threshold
-      if (abs(difference) > ACTIVATION_THRESHOLD) {
         if (difference > 0) {
           currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
         } else {
           currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
         }
         trackerServo.write(currentAngle);
-      }
 
-      if (front_distance > 15) {
+      if (front_distance > 10) {
         float correction_kp = 5.0;
         float error = currentAngle - 90;
 
