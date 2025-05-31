@@ -21,7 +21,6 @@ enum STATE {
 #define BLUETOOTH_RX 10
 // Serial Data output pin
 #define BLUETOOTH_TX 11
-#define STARTUP_DELAY 3  // Seconds
 SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 
 #define SERVO_PIN 37
@@ -34,25 +33,15 @@ SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 
 SoftwareSerial *SerialCom;
 
-
 const int MOTOR_MIN = 1000;
-
 const int MOTOR_MAX = 2000;
-
-
-
-
 
 // System parameters
 
 const float ACTIVATION_THRESHOLD = 0.5;  // Minimum voltage difference to react
-
 const int START_ANGLE = 90;  // Initial servo position
-
 const int ANGLE_INCREMENT = 1;  // Degree change per adjustment
-
 const int SERVO_MIN = 0;  // Minimum servo angle
-
 const int SERVO_MAX = 180;  // Maximum servo angle
 
 
@@ -134,6 +123,10 @@ double last_var_ir_short_left = 1;
 double process_noise_ir_short_left = 1;
 double sensor_noise_ir_short_left = 1;
 
+// Objective related parametres
+const int fan_pin = 53;
+int fire_extinguished = 0;
+
 int current_servo_angle = 45;
 
 Servo myservo;
@@ -180,7 +173,6 @@ void setup(void) {
 
   SerialCom->begin(115200);
   // SerialCom->begin(115200);
-  delaySeconds(STARTUP_DELAY);
   trackerServo.attach(SERVO_PIN);
   trackerServo.write(START_ANGLE);
   pinMode(TRIG_PIN, OUTPUT);
@@ -188,6 +180,9 @@ void setup(void) {
   // SerialCom->println("MECHENG706");
   // SerialCom->println("Setup....");
   calibrateGyro();
+
+  // Initialise fan pin
+  pinMode(fan_pin, OUTPUT);
 
   // Initialize distance variables to prevent NaN
   rightDist = 30.0;  // reasonable default
@@ -224,12 +219,9 @@ void loop(void) {
       break;
     case DETECT_FIRE:
       machine_state = detect_fire();
-
       break;
     case DRIVE_TO_FIRE:
-
       machine_state = drive_to_fire();
-
       break;
     case STOPPED:
       // SerialCom->println("STOPPED....");
@@ -276,10 +268,9 @@ STATE detect_fire() {
     if (counter > 10) {
       float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
       float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-      speed_val = 130;
+      speed_val = 150;
       cw();
-      speed_val = 200;
-      if (leftVoltage > 0.13 && rightVoltage > 0.13) {
+      if (leftVoltage > 0.20 && rightVoltage > 0.20) {
         if (abs(leftVoltage - rightVoltage) < 0.3) {
           stop();
           counter = 0;
@@ -320,16 +311,16 @@ STATE drive_to_fire() {
         float error = currentAngle - 90;
 
         float correction_factor = correction_kp * error;
-
-        left_font_motor.writeMicroseconds(constrain(1500 + speed_val / 2 - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        left_rear_motor.writeMicroseconds(constrain(1500 + speed_val / 2 - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        right_font_motor.writeMicroseconds(constrain(1500 - speed_val / 2 - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        right_rear_motor.writeMicroseconds(constrain(1500 - speed_val / 2 - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        speed_val = 150;
+        left_font_motor.writeMicroseconds(constrain(1500 + speed_val  - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_font_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_rear_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
 
       } else {
         stop();
         counter = 0;
-        return NAVIGATE;
+        return EXTINGUISH;
       }
     }
   }
@@ -373,6 +364,8 @@ STATE navigate() {
       front_count++;
       forward();
       if (front_count > 60) {
+        // after avoid the obstacle spin again face the fire
+        // logic here to rotate in the correct direction
         SerialCom->println("detect fire activate");
         stop();
         front_count = 0;
@@ -459,12 +452,54 @@ STATE right() {
 }
 
 STATE extinguish() {
-  // TODO: turn the fan on for 10 seconds
+  unsigned long current_time = millis();
+  static unsigned long start_time = 0;
+  static bool extinguished = false;
+  static bool timer_started = false;
 
-  // TODO: turn the fan off if fire is extinguished before 10 seconds
+  if (!timer_started){
+    start_time = current_time;
+    timer_started = true;
+  }
 
-  // TODO: find another fire, or stop the robot if two fire have been extinguished.
-  return EXTINGUISH;
+  unsigned long elapsed_time = current_time - start_time;
+
+
+  if (elapsed_time < 10000) {  
+    stop();
+    digitalWrite(fan_pin, HIGH);  
+    
+    float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+    float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+    
+    if (leftVoltage < 0.20 && rightVoltage < 0.20) {
+      fire_extinguished += 1;
+      digitalWrite(fan_pin, LOW);
+      timer_started = false;  // Reset for next time
+      delay(1000);
+      
+      if (fire_extinguished >= 2) {
+        return STOPPED;
+      }
+      reverse();
+      delay(300);
+      stop();
+      return DETECT_FIRE;
+    }
+  } else {
+    digitalWrite(fan_pin, LOW);
+    extinguished = true;
+    timer_started = false;  // Reset for next time
+  }
+
+  if (extinguished) {
+    reverse();
+    delay(300);
+    stop();
+    return DETECT_FIRE;
+  }
+  
+  return EXTINGUISH;  // Stay in extinguish state if still trying
 }
 
 //----------------------STOPPED STATE------------------------
@@ -495,6 +530,9 @@ STATE check_gyro() {
 }
 
 //-------------------------------Helper Functions---------------------------------
+
+
+
 
 //----------------------Wireless------------------------
 void delaySeconds(int TimedDelaySeconds) {
