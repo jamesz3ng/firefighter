@@ -9,7 +9,7 @@ enum STATE {
   INITIALISING,
   DETECT_FIRE,
   DRIVE_TO_FIRE,
-  NAVIGATE,
+  AVOID,
   EXTINGUISH,
   CHECK_GYRO,
   STOPPED,
@@ -141,7 +141,7 @@ double Kalman_ir_back(double rawdata, double prev_est);
 double Kalman_ir_short_left(double rawdata, double prev_est);
 STATE initialising();
 STATE stopped();
-STATE navigate();
+STATE Avoid();
 STATE extinguish();
 STATE check_gyro();
 STATE detect_fire();
@@ -188,8 +188,8 @@ void loop(void) {
     case EXTINGUISH:
       machine_state = extinguish();
       break;
-    case NAVIGATE:
-      machine_state = navigate();
+    case AVOID:
+      machine_state = Avoid();
       break;
     case LEFT:
       machine_state = left();
@@ -286,7 +286,7 @@ STATE drive_to_fire() {
 }
 
 
-STATE navigate() {
+STATE Avoid() {
   static unsigned long previous_millis;
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
@@ -342,7 +342,7 @@ STATE navigate() {
       forward();
     }
   }
-  return NAVIGATE;
+  return AVOID;
 }
 
 STATE left() {
@@ -367,7 +367,7 @@ STATE left() {
 
     if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
       stop();
-      return NAVIGATE;
+      return AVOID;
     } else {
       strafe_left();
     }
@@ -394,7 +394,7 @@ STATE right() {
     //   return LEFT;
     // }
     if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
-      return NAVIGATE;
+      return AVOID;
     } else {
       strafe_right();
     }

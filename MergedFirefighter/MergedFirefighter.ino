@@ -8,7 +8,7 @@
 enum STATE {
   INITIALISING,
   DETECT_FIRE,
-  NAVIGATE,
+  AVOID,
   EXTINGUISH,
   CHECK_GYRO,
   STOPPED,
@@ -140,7 +140,7 @@ double Kalman_ir_short_left(double rawdata, double prev_est);
 float getVoltage(int analog_pin);
 STATE initialising();
 STATE stopped();
-STATE navigate();
+STATE Avoid();
 STATE extinguish();
 STATE check_gyro();
 STATE detect_fire();
@@ -167,8 +167,22 @@ void setup(void) {
   // Initialize ultrasonic pins
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
+    calibrateGyro();
   
-  calibrateGyro();
+  // Initialize distance variables to prevent NaN
+  rightDist = 30.0;  // reasonable default
+  frontLeftDist = 30.0;
+  frontRightDist = 30.0;
+  leftDist = 30.0;
+  front_distance = 30.0;
+
+  // Initialize Kalman variances
+  last_var_ir_back = 1.0;
+  last_var_ir_left = 1.0;
+  last_var_ir_right = 1.0;
+  last_var_ir_short_left = 1.0;
+  last_var_ultrasonic = 1.0;
+  
   delay(50);
 }
 
@@ -194,8 +208,8 @@ void loop(void) {
     case EXTINGUISH:
       machine_state = extinguish();
       break;
-    case NAVIGATE:
-      machine_state = navigate();
+    case AVOID:
+      machine_state = Avoid();
       break;
     case LEFT:
       machine_state = left();
@@ -263,7 +277,7 @@ STATE detect_fire() {
         SerialCom->println("No fire detected, switching to navigation");
         stop();
         counter = 0;
-        return NAVIGATE;
+        return AVOID;
       }
     }
   }
@@ -341,7 +355,7 @@ STATE drive_to_fire() {
   return DRIVE_TO_FIRE;
 }
 
-STATE navigate() {
+STATE Avoid() {
   static unsigned long previous_millis;
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
@@ -382,7 +396,7 @@ STATE navigate() {
       forward();
     }
   }
-  return NAVIGATE;
+  return AVOID;
 }
 
 STATE left() {
@@ -410,7 +424,7 @@ STATE left() {
       counting_time++;
       if (counting_time > 5) {
         counting_time = 0;
-        return NAVIGATE;
+        return AVOID;
       }
     } else {
       strafe_left();
@@ -445,7 +459,7 @@ STATE right() {
       if (counting_time > 5) {
         counting_time = 0;
         SerialCom->println("Returning to navigation");
-        return NAVIGATE;
+        return AVOID;
       }
     } else {
       strafe_right();
@@ -680,10 +694,34 @@ void ReadRightFront() {
 
   // Calculate the distance using the voltage (for Sharp GP2Y0A21YK0F, this is a typical formula)
   // Note: this is a rough estimate based on sensor's datasheet.
-  rightIrDistance = (25.5 * pow(voltage, -1.10));
+  if (voltage < 0.1) {
+    rightIrDistance = frontRightDist;  // fallback to last estimate
+  } else {
+    rightIrDistance = (25.5 * pow(voltage, -1.10));
+    
+    // Clamp distance to reasonable range
+    if (rightIrDistance > 100.0) {
+      rightIrDistance = 100.0;
+    } else if (rightIrDistance < 5.0) {
+      rightIrDistance = 5.0;
+    }
+  }
 
+  // Check for NaN before Kalman filter
+  if (isnan(frontRightDist) || isnan(last_var_ir_right)) {
+    frontRightDist = rightIrDistance;  // Reset to current reading
+    last_var_ir_right = 1.0;           // Reset variance
+  }
+
+  // Kalman filter with NaN check
   double est = Kalman_ir_right(rightIrDistance, frontRightDist);
-  frontRightDist = est;
+
+  if (!isnan(est)) {
+    frontRightDist = est;
+  } else {
+    frontRightDist = rightIrDistance;
+    last_var_ir_right = 1.0;  // Reset variance
+  }
 }
 
 void ReadLeftFront() {
@@ -694,10 +732,34 @@ void ReadLeftFront() {
 
   // Calculate the distance using the voltage (for Sharp GP2Y0A21YK0F, this is a typical formula)
   // Note: this is a rough estimate based on sensor's datasheet.
-  leftIrDistance = (25.5 * pow(voltage, -1.10));
+  if (voltage < 0.1) {
+    leftIrDistance = frontLeftDist;  // fallback to last estimate
+  } else {
+    leftIrDistance = (25.5 * pow(voltage, -1.10));
+    
+    // Clamp distance to reasonable range
+    if (leftIrDistance > 100.0) {
+      leftIrDistance = 100.0;
+    } else if (leftIrDistance < 5.0) {
+      leftIrDistance = 5.0;
+    }
+  }
 
+  // Check for NaN before Kalman filter
+  if (isnan(frontLeftDist) || isnan(last_var_ir_left)) {
+    frontLeftDist = leftIrDistance;  // Reset to current reading
+    last_var_ir_left = 1.0;          // Reset variance
+  }
+
+  // Kalman filter with NaN check
   double est = Kalman_ir_left(leftIrDistance, frontLeftDist);
-  frontLeftDist = est;
+
+  if (!isnan(est)) {
+    frontLeftDist = est;
+  } else {
+    frontLeftDist = leftIrDistance;
+    last_var_ir_left = 1.0;  // Reset variance
+  }
 }
 
 void ReadRight() {

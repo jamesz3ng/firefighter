@@ -8,7 +8,7 @@
 enum STATE {
   INITIALISING,
   DETECT_FIRE,
-  NAVIGATE,
+  AVOID,
   EXTINGUISH,
   CHECK_GYRO,
   STOPPED,
@@ -160,7 +160,7 @@ double Kalman_ir_back(double rawdata, double prev_est);
 double Kalman_ir_short_left(double rawdata, double prev_est);
 STATE initialising();
 STATE stopped();
-STATE navigate();
+STATE Avoid();
 STATE extinguish();
 STATE check_gyro();
 
@@ -230,8 +230,8 @@ void loop(void) {
     case EXTINGUISH:
       machine_state = extinguish();
       break;
-    case NAVIGATE:
-      machine_state = navigate();
+    case AVOID:
+      machine_state = Avoid();
       break;
     case LEFT:
       machine_state = left();
@@ -327,7 +327,7 @@ STATE drive_to_fire() {
   return DRIVE_TO_FIRE;
 }
 
-STATE navigate() {
+STATE Avoid() {
   static unsigned long previous_millis;
   static unsigned long front_count = 0;
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
@@ -372,7 +372,7 @@ STATE navigate() {
         return DETECT_FIRE;
       }
     }
-    return NAVIGATE;
+    return AVOID;
     // TODO: find fire
   }
 }
@@ -404,7 +404,7 @@ STATE left() {
       stop();
       counting_time++;
       if (counting_time > 5)
-        return NAVIGATE;
+        return AVOID;
     } else {
       strafe_left();
     }
@@ -442,7 +442,7 @@ STATE right() {
     // }
     if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
       SerialCom->println("Activate Navigate");
-      return NAVIGATE;
+      return AVOID;
     } else {
       strafe_right();
     }
