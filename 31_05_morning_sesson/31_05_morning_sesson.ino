@@ -123,16 +123,6 @@ double last_var_ir_short_left = 1;
 double process_noise_ir_short_left = 1;
 double sensor_noise_ir_short_left = 1;
 
-// Phototransistor
-double process_noise_photo_left = 1;
-double process_noise_photo_right = 1;
-double sensor_noise_photo_left = 1; 
-double sensor_noise_photo_right = 1;
-double last_var_photo_left = 1;
-double last_var_photo_right = 1;
-double leftPhotoVoltage = 0.0;  
-double rightPhotoVoltage = 0.0; 
-
 // Objective related parametres
 const int fan_pin = 53;
 int fire_extinguished = 0;
@@ -201,9 +191,6 @@ void setup(void) {
   frontRightDist = 30.0;
   leftDist = 30.0;
   front_distance = 30.0;
-  leftPhotoVoltage = 0.5; 
-  rightPhotoVoltage = 0.5; 
-  
 
   // Initialize Kalman variances
   last_var_ir_back = 1.0;
@@ -211,8 +198,6 @@ void setup(void) {
   last_var_ir_right = 1.0;
   last_var_ir_short_left = 1.0;
   last_var_ultrasonic = 1.0;
-  last_var_photo_left = 1.0;
-  last_var_photo_right = 1.0;
 
   delay(50);
 
@@ -229,22 +214,20 @@ void setup(void) {
 }
 
 void loop(void) {
-  
-
+  // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+  // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+  // SerialCom->print("leftVoltage  ");
+  // SerialCom->print(leftVoltage);
+  // SerialCom->print("rightVoltage  ");
+  // SerialCom->println(rightVoltage);
   ReadUltrasonic();
   // SerialCom->println(front_distance);
   ReadLeftFront();
   ReadRightFront();
   ReadLeft();
   ReadRight();
-  ReadPhotoLeft();
-  ReadPhotoRight();
-  // SerialCom->print("leftVoltage  ");
-  // SerialCom->print(leftPhotoVoltage);
-  // SerialCom->print("rightVoltage  ");
-  // SerialCom->println(rightPhotoVoltage);
-  // delay(100);
 
+  // delay(100);
   static STATE machine_state = INITIALISING;
   // Finite-state machine Code
   switch (machine_state) {
@@ -307,13 +290,13 @@ STATE detect_fire() {
     previous_millis = millis();
     counter++;
     if (counter > 10) {
-      ReadPhotoLeft();
-      ReadPhotoRight();
+      float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+      float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
       speed_val = 150;
       rotate_cw ? cw() : ccw();
       // cw();
-      if (leftPhotoVoltage > 0.20 && rightPhotoVoltage > 0.20) {
-        if (abs(leftPhotoVoltage - rightPhotoVoltage) < 0.3) {
+      if (leftVoltage > 0.20 && rightVoltage > 0.20) {
+        if (abs(leftVoltage - rightVoltage) < 0.3) {
           stop();
           counter = 0;
           return DRIVE_TO_FIRE;
@@ -333,18 +316,18 @@ STATE drive_to_fire() {
     previous_millis = millis();
     counter++;
     // Read light sensors
-    ReadPhotoLeft();
-    ReadPhotoRight();
-    float difference = leftPhotoVoltage - rightPhotoVoltage;
+    float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+    float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+    float difference = leftVoltage - rightVoltage;
 
     ReadLeftFront();
     ReadRightFront();
     ReadUltrasonic();
-    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftPhotoVoltage < 1 && rightPhotoVoltage < 1)) {
+    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftVoltage < 1.0 && rightVoltage < 1.0)) {
       SerialCom->print("leftVoltage  ");
-      SerialCom->print(leftPhotoVoltage);
+      SerialCom->print(leftVoltage);
       SerialCom->print("rightVoltage  ");
-      SerialCom->println(rightPhotoVoltage);
+      SerialCom->println(rightVoltage);
       return AVOID;
     }
 
@@ -501,7 +484,7 @@ STATE right() {
     ReadRightFront();
     ReadRight();
     ReadUltrasonic();
-    SerialCom->println("In Right  ");
+    SerialCom->print("In Right  ");
     // SerialCom->print("ultrasonic distance  ");
     // SerialCom->print(front_distance);
     // SerialCom->print("  frontRightDist  ");
@@ -543,24 +526,29 @@ STATE extinguish() {
 
 
   if (elapsed_time < 10000) {
+    SerialCom -> print("elapsed time");
     stop();
     digitalWrite(fan_pin, HIGH);
 
-    ReadPhotoLeft();
-    ReadPhotoRight();
+    float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+    float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
 
-    if (leftPhotoVoltage < 0.20 && rightPhotoVoltage < 0.20) {
+    if (leftVoltage < 0.20 && rightVoltage < 0.20) {
       fire_extinguished += 1;
+      SerialCom->print("Fire extinguished count: ");
+      SerialCom->println(fire_extinguished);
       digitalWrite(fan_pin, LOW);
       timer_started = false;  // Reset for next time
       // delay(1000);
 
       if (fire_extinguished >= 2) {
+        SerialCom->println("Fire extinguished, stopping.");
         return STOPPED;
       }
       reverse();
       delay(300);
       stop();
+      extinguished = true;  // Fire extinguished, exit loop
       return DETECT_FIRE;
     }
   } else {
@@ -672,32 +660,6 @@ double Kalman_ir_back(double rawdata, double prev_est) {  // Kalman Filter
   return a_post_est;
 }
 
-double Kalman_photo_left(double rawdata, double prev_est) {  // Kalman Filter
-  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
-
-  a_priori_est = prev_est;
-  a_priori_var = last_var_photo_left + process_noise_photo_left;
-
-  kalman_gain = a_priori_var / (a_priori_var + sensor_noise_photo_left);
-  a_post_est = a_priori_est + kalman_gain * (rawdata - a_priori_est);
-  a_post_var = (1 - kalman_gain) * a_priori_var;
-  last_var_photo_left = a_post_var;
-  return a_post_est;
-}
-
-double Kalman_photo_right(double rawdata, double prev_est) {  // Kalman Filter
-  double a_priori_est, a_post_est, a_priori_var, a_post_var, kalman_gain;
-
-  a_priori_est = prev_est;
-  a_priori_var = last_var_photo_right + process_noise_photo_right;
-
-  kalman_gain = a_priori_var / (a_priori_var + sensor_noise_photo_right);
-  a_post_est = a_priori_est + kalman_gain * (rawdata - a_priori_est);
-  a_post_var = (1 - kalman_gain) * a_priori_var;
-  last_var_photo_right = a_post_var;
-  return a_post_est;
-}
-
 //----------------------Battery------------------------
 boolean is_battery_voltage_OK() {
   static byte Low_voltage_counter;
@@ -742,11 +704,10 @@ boolean is_battery_voltage_OK() {
 
 float readPhotoTransistor(int analog_pin) {
 
-  float volts = analogRead(analog_pin) * 5.0 / 1023.0;
+  float volts = analogRead(analog_pin) * 5.0 / 1024.0;
 
   return volts;
 }
-
 
 void ReadUltrasonic() {
   unsigned long t1;
@@ -796,30 +757,6 @@ void ReadUltrasonic() {
 }
 
 //----------------------IR------------------------
-void ReadPhotoLeft() {
-  // 1. Read ADC value
-  int rawPhotoValue = analogRead(LEFT_PHOTOTRANSISTOR);
-
-  // 2. Convert to voltage (assuming 5V reference)
-  float voltage = rawPhotoValue * (5.0 / 1023.0);
-
-  // 5. Kalman filtering
-  double est = Kalman_photo_left(voltage, leftPhotoVoltage);
-  leftPhotoVoltage = est;
-}
-
-void ReadPhotoRight() {
-  // 1. Read ADC value
-  int rawPhotoValue = analogRead(RIGHT_PHOTOTRANSISTOR);
-
-  // 2. Convert to voltage (assuming 5V reference)
-  float voltage = rawPhotoValue * (5.0 / 1023.0);
-
-  // 5. Kalman filtering
-  double est = Kalman_photo_right(voltage, rightPhotoVoltage);
-  rightPhotoVoltage = est;
-}
-
 void ReadRightFront() {
   // 1. Read ADC value
   rightIrSensorValue = analogRead(rightFrontIrPin);
