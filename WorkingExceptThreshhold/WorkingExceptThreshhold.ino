@@ -171,8 +171,8 @@ void setup(void) {
   SerialCom = &BluetoothSerial;
   // SerialCom = &Serial;
 
-  // Serial.begin(9600);
-  SerialCom->begin(115200);
+  Serial.begin(9600);
+  // SerialCom->begin(115200);
   // SerialCom->begin(115200);
   trackerServo.attach(SERVO_PIN);
   trackerServo.write(START_ANGLE);
@@ -295,8 +295,8 @@ STATE detect_fire() {
       speed_val = 150;
       rotate_cw ? cw() : ccw();
       // cw();
-      if (leftVoltage > 0.20 && rightVoltage > 0.20) {
-        if (abs(leftVoltage - rightVoltage) < 0.3) {
+      if (leftVoltage > 0.16 && rightVoltage > 0.16) {
+        if (abs(leftVoltage - rightVoltage) < 0.4) {
           stop();
           counter = 0;
           return DRIVE_TO_FIRE;
@@ -323,7 +323,7 @@ STATE drive_to_fire() {
     ReadLeftFront();
     ReadRightFront();
     ReadUltrasonic();
-    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftVoltage < 1.0 && rightVoltage < 1.0)) {
+    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftVoltage < 0.75 && rightVoltage < 0.75)) {
       SerialCom->print("leftVoltage  ");
       SerialCom->print(leftVoltage);
       SerialCom->print("rightVoltage  ");
@@ -335,7 +335,7 @@ STATE drive_to_fire() {
       // Only adjust if difference exceeds threshold
       if (difference > 0) {
         currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
-      } else {
+      } else {  
         currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
       }
       trackerServo.write(currentAngle);
