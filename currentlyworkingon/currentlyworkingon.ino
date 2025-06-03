@@ -214,12 +214,12 @@ void setup(void) {
 }
 
 void loop(void) {
-  float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-  float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-  SerialCom->print("leftVoltage  ");
-  SerialCom->print(leftVoltage);
-  SerialCom->print("rightVoltage  ");
-  SerialCom->println(rightVoltage);
+  // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+  // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+  // SerialCom->print("leftVoltage  ");
+  // SerialCom->print(leftVoltage);
+  // SerialCom->print("rightVoltage  ");
+  // SerialCom->println(rightVoltage);
   ReadUltrasonic();
   // SerialCom->println(front_distance);
   ReadLeftFront();
@@ -311,56 +311,120 @@ STATE drive_to_fire() {
   static unsigned long previous_millis;
   static int currentAngle = START_ANGLE;  // Preserve angle between iterations
   static unsigned int counter = 0;
+  static bool fire_locked = false;  // Track if we've locked onto fire
 
   if (millis() - previous_millis > T) {
     previous_millis = millis();
     counter++;
+    
     // Read light sensors
     float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
     float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
     float difference = leftVoltage - rightVoltage;
-    // if (counter < 5){
-      SerialCom->println("driving to fire");
-    // }
+    
+    // Debug output
+    SerialCom->print("Drive to fire - L: ");
+    SerialCom->print(leftVoltage, 2);
+    SerialCom->print(" R: ");
+    SerialCom->print(rightVoltage, 2);
+    SerialCom->print(" Diff: ");
+    SerialCom->print(difference, 2);
+    SerialCom->print(" Angle: ");
+    SerialCom->println(currentAngle);
 
+    // Read distance sensors
     ReadLeftFront();
     ReadRightFront();
     ReadUltrasonic();
-    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftVoltage < 1 && rightVoltage < 1)) {
-      SerialCom->print("leftVoltage  ");
-      SerialCom->print(leftVoltage);
-      SerialCom->print("rightVoltage  ");
-      SerialCom->println(rightVoltage);
-      counter = 0;
-      return AVOID;
+    
+    // Check if we lost the fire or hit obstacle
+    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10)) {
+      if (leftVoltage < 0.5 && rightVoltage < 0.5) {
+        // Lost fire signal and obstacle detected
+        SerialCom->println("Lost fire - obstacle detected");
+        stop();
+        counter = 0;
+        fire_locked = false;
+        currentAngle = START_ANGLE;  // Reset servo
+        trackerServo.write(currentAngle);
+        return AVOID;
+      }
     }
 
     if (counter > 10) {
-      // Only adjust if difference exceeds threshold
-      if (difference > 0) {
-        currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+      // Servo adjustment with dead zone
+      const float SERVO_DEADZONE = 0.05;  // Ignore differences smaller than this
+      const float SERVO_GAIN = 0.5;       // Slower servo response
+      
+      if (abs(difference) > SERVO_DEADZONE) {
+        // Proportional servo control
+        int angleAdjustment = (int)(difference * SERVO_GAIN * 10);  // Scale difference to degrees
+        angleAdjustment = constrain(angleAdjustment, -3, 3);  // Limit adjustment speed
+        
+        if (difference > SERVO_DEADZONE) {
+          // More light on left, turn servo right
+          currentAngle = constrain(currentAngle - angleAdjustment, SERVO_MIN, SERVO_MAX);
+        } else if (difference < -SERVO_DEADZONE) {
+          // More light on right, turn servo left
+          currentAngle = constrain(currentAngle + angleAdjustment, SERVO_MIN, SERVO_MAX);
+        }
+        
+        trackerServo.write(currentAngle);
       } else {
-        currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+        // Fire is centered
+        fire_locked = true;
       }
-      trackerServo.write(currentAngle);
 
-      if (front_distance > 10) {
-        float correction_kp = 5.0;
-        float error = currentAngle - 90;
-
+      // Drive toward fire if far enough
+      if (front_distance > 15) {  // Increased threshold for safety
+        // Reduced correction gain and limited error range
+        float correction_kp = 1.0;  // Reduced from 5.0
+        float error = (currentAngle - 90);
+        
+        // Limit error to prevent extreme corrections
+        error = constrain(error, -30, 30);  // Max ±30 degree error
+        
         float correction_factor = correction_kp * error;
-        speed_val = 150;
-        left_font_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        right_font_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        right_rear_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-
+        
+        // Base speed
+        int base_speed = 150;
+        
+        // Calculate motor speeds with proper differential drive
+        int left_speed = base_speed + (int)correction_factor;
+        int right_speed = base_speed - (int)correction_factor;
+        
+        // Ensure minimum forward speed
+        left_speed = constrain(left_speed, 50, 250);
+        right_speed = constrain(right_speed, 50, 250);
+        
+        // Debug motor speeds
+        SerialCom->print("Motor speeds - L: ");
+        SerialCom->print(left_speed);
+        SerialCom->print(" R: ");
+        SerialCom->println(right_speed);
+        
+        // Apply to motors
+        left_font_motor.writeMicroseconds(1500 + left_speed);
+        left_rear_motor.writeMicroseconds(1500 + left_speed);
+        right_font_motor.writeMicroseconds(1500 - right_speed);
+        right_rear_motor.writeMicroseconds(1500 - right_speed);
+        
       } else {
+        // Close enough to fire
         stop();
         counter = 0;
-        SerialCom -> println("Activate Extinguish");
+        fire_locked = false;
+        SerialCom->println("Reached fire - Activating Extinguish");
+        
+        // Center the servo before extinguishing
+        trackerServo.write(90);
+        delay(500);  // Give servo time to center
+        
         return EXTINGUISH;
       }
+    } else {
+      // Initial delay - just stop
+      stop();
     }
   }
   return DRIVE_TO_FIRE;
