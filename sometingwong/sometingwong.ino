@@ -233,24 +233,40 @@ void setup(void) {
 }
 
 void loop(void) {
+  
+  // static unsigned long counter = 0;
+  // if (counter > 100){
   // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
   // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
   // SerialCom->print("leftVoltage  ");
   // SerialCom->print(leftVoltage);
   // SerialCom->print("rightVoltage  ");
   // SerialCom->println(rightVoltage);
-  ReadUltrasonic();
-  // SerialCom->println(front_distance);
-  ReadLeftFront();
-  ReadRightFront();
-  ReadLeft();
-  ReadRight();
-  ReadPhotoLeft();
-  ReadPhotoRight();
+  // counter = 0;
+  // }
+  // counter += 1;
 
-  // delay(100);
+  // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+  // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+  // SerialCom->print("leftVoltage  ");
+  // SerialCom->print(leftVoltage);
+  // SerialCom->print("rightVoltage  ");
+  // SerialCom->println(rightVoltage);
+  //   delay(100);
+
+  // ReadUltrasonic();
+  // SerialCom->println(front_distance);
+  // ReadLeftFront();
+  // ReadRightFront();
+  // ReadLeft();
+  // ReadRight();
+  // ReadPhotoLeft();
+  // ReadPhotoRight();
+  // SerialCom->print("clockwise rotation is");
+  // SerialCom->println(rotate_cw);
+
   static STATE machine_state = INITIALISING;
-  // Finite-state machine Code
+  // // Finite-state machine Code
   switch (machine_state) {
     case INITIALISING:
       // SerialCom->println("INITIALISING....");
@@ -313,17 +329,23 @@ STATE detect_fire() {
     if (counter > 10) {
       // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
       // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-      ReadPhotoLeft();
-      ReadPhotoRight();
+      // ReadPhotoLeft();
+      // ReadPhotoRight();
+      float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+      float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+      // SerialCom->print("leftVoltage  ");
+      // SerialCom->print(leftPhotoVoltage);
+      // SerialCom->print("rightVoltage  ");
+      // SerialCom->println(rightPhotoVoltage);
       SerialCom->print("leftVoltage  ");
-      SerialCom->print(leftPhotoVoltage);
+      SerialCom->print(leftVoltage_nokalman);
       SerialCom->print("rightVoltage  ");
-      SerialCom->println(rightPhotoVoltage);
+      SerialCom->println(rightVoltage_nokalman);
       speed_val = 150;
       rotate_cw ? cw() : ccw();
       // cw();
-      if (leftPhotoVoltage > 0.6 && rightPhotoVoltage > 0.6) {
-        if (abs(leftPhotoVoltage - rightPhotoVoltage) < 0.3) {
+      if (leftVoltage_nokalman > 0.4 && rightVoltage_nokalman > 0.4) {
+        if (abs(leftVoltage_nokalman - rightVoltage_nokalman) < 0.3) {
           stop();
           counter = 0;
           currentAngle = START_ANGLE;
@@ -345,15 +367,19 @@ STATE drive_to_fire() {
     previous_millis = millis();
 
     counter++;
+    if (counter<5) {
+      SerialCom->print("Drive to fire");
+    }
+    if (counter>20) {
     // Read light sensors
     // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
     // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
     // ReadPhotoLeft();
     // ReadPhotoRight();
-    float difference = leftPhotoVoltage - rightPhotoVoltage;
-    if (counter < 50){
-      stop();
-    }
+    float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+    float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+
+    float difference = leftVoltage_nokalman - rightVoltage_nokalman;
     // if (counter < 10) {
     //   SerialCom->print("drive to fire  ");
     //   SerialCom->print("leftVoltage  ");
@@ -362,18 +388,18 @@ STATE drive_to_fire() {
     //   SerialCom->println(rightPhotoVoltage);
     // }
 
-    // ReadLeftFront();
-    // ReadRightFront();
-    // ReadUltrasonic();
-    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftPhotoVoltage < 4.6 || rightPhotoVoltage < 4.6)) {
+    ReadLeftFront();
+    ReadRightFront();
+    ReadUltrasonic();
+    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftVoltage_nokalman < 4.2 && rightVoltage_nokalman < 4.2)) {
       SerialCom->print("leftVoltage  ");
-      SerialCom->print(leftPhotoVoltage);
+      SerialCom->print(leftVoltage_nokalman);
       SerialCom->print("rightVoltage  ");
-      SerialCom->println(rightPhotoVoltage);
+      SerialCom->println(rightVoltage_nokalman);
+      counter = 0;
       return AVOID;
     }
 
-    if (counter > 50) {
       // Only adjust if difference exceeds threshold
       if (difference > 0) {
         currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
@@ -388,13 +414,18 @@ STATE drive_to_fire() {
 
         float correction_factor = correction_kp * error;
 
-        SerialCom->print("drive to fire  ");
-        SerialCom->print("correction_factor  ");
-        SerialCom->print(correction_factor);
         SerialCom->print("leftVoltage  ");
-        SerialCom->print(leftPhotoVoltage);
+        SerialCom->print(leftVoltage_nokalman);
         SerialCom->print("rightVoltage  ");
-        SerialCom->println(rightPhotoVoltage);
+        SerialCom->println(rightVoltage_nokalman);
+
+        // SerialCom->print("drive to fire  ");
+        // SerialCom->print("correction_factor  ");
+        // SerialCom->print(correction_factor);
+        // SerialCom->print("leftVoltage  ");
+        // SerialCom->print(leftPhotoVoltage);
+        // SerialCom->print("rightVoltage  ");
+        // SerialCom->println(rightPhotoVoltage);
         speed_val = 150;
         left_font_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
         left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
@@ -403,11 +434,11 @@ STATE drive_to_fire() {
 
       } else {
         stop();
-        counter = 0;
         SerialCom->println("Activate Extinguish");
+        counter = 0;
         return EXTINGUISH;
-      }
     }
+  }
   }
   return DRIVE_TO_FIRE;
 }
@@ -424,7 +455,7 @@ STATE Avoid() {
     ReadUltrasonic();
     ReadLeftFront();
     ReadRightFront();
-    SerialCom->println("in navigate.");
+    SerialCom->println("In AVOID.");
     // SerialCom->print("ultrasonic distance  ");
     // SerialCom->print(front_distance);
     // SerialCom->print("  frontRightDist  ");
@@ -443,13 +474,13 @@ STATE Avoid() {
     } else if (front_distance < 10) {
       SerialCom->println("ultrasonic hit");
       stop();
-      return LEFT;
+      return RIGHT;
     } else {
       SerialCom->println("nothing within 10cm");
       front_count++;
       forward();
 
-      if (front_count > 10) {
+      if (front_count > 30) {
         // after avoid the obstacle spin again face the fire
         // logic here to rotate in the correct direction
         SerialCom->println("detect fire activate");
@@ -468,6 +499,7 @@ STATE left() {
   static unsigned long previous_millis;
   static int counting_time = 0;
   rotate_cw = true;
+  SerialCom->println("IN LEFT ");
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
@@ -478,7 +510,6 @@ STATE left() {
     ReadRightFront();
     ReadLeft();
     ReadUltrasonic();
-    SerialCom->print("In Left  ");
     // SerialCom->print("ultrasonic distance  ");
     // SerialCom->print(front_distance);
     // SerialCom->print("  frontRightDist  ");
@@ -487,12 +518,12 @@ STATE left() {
     // SerialCom->print(frontLeftDist);
     // SerialCom->print("  leftDist  ");
     // SerialCom->println(leftDist);
-    if (leftDist < 15) {
-      stop();
-      SerialCom->println("left side hit");
-      counting_time = 0;
-      return RIGHT;
-    }
+    // if (leftDist < 15) {
+    //   stop();
+    //   SerialCom->println("left side hit");
+    //   counting_time = 0;
+    //   return RIGHT;
+    // }
 
     if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
 
@@ -513,8 +544,14 @@ STATE right() {
   static unsigned long previous_millis;
   static unsigned long right_counter = 0;
   rotate_cw = false;
+  // SerialCom->println("IN RIGHT");
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
+
+    ReadLeftFront();
+    ReadRightFront();
+    ReadRight();
+    ReadUltrasonic();
 
     if (!is_battery_voltage_OK()) {
       SerialCom->println("battery stop");
@@ -522,19 +559,8 @@ STATE right() {
     }
     // SerialCom->print("rightDist ");
     // SerialCom->println(rightDist);
-    if (rightDist < 15) {
-      stop();
-      SerialCom->println("right hit ");
-      right_counter = 0;
-      return LEFT;
-    }
 
 
-    ReadLeftFront();
-    ReadRightFront();
-    ReadRight();
-    ReadUltrasonic();
-    SerialCom->println("In Right  ");
     // SerialCom->print("ultrasonic distance  ");
     // SerialCom->print(front_distance);
     // SerialCom->print("  frontRightDist  ");
@@ -581,13 +607,15 @@ STATE extinguish() {
 
   // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
   // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-  ReadPhotoLeft();
-  ReadPhotoRight();
+  float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+  float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+  // ReadPhotoLeft();
+  // ReadPhotoRight();
   SerialCom->print("leftVoltage: ");
-  SerialCom->print(leftPhotoVoltage);
+  SerialCom->print(leftVoltage_nokalman);
   SerialCom->print("  rightVoltage: ");
-  SerialCom->println(rightPhotoVoltage);
-  if (leftPhotoVoltage < 0.20 && rightPhotoVoltage < 0.20) {
+  SerialCom->println(rightVoltage_nokalman);
+  if (leftVoltage_nokalman < 0.20 && rightVoltage_nokalman < 0.20) {
     fire_extinguished += 1;
     SerialCom->print("fire extinguished: ");
     SerialCom->println(fire_extinguished);
