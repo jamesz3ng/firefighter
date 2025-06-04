@@ -24,8 +24,10 @@ enum STATE {
 SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
 
 #define SERVO_PIN 37
-#define LEFT_PHOTOTRANSISTOR A9
-#define RIGHT_PHOTOTRANSISTOR A10
+#define LEFT_PHOTOTRANSISTOR_A A9
+#define LEFT_PHOTOTRANSISTOR_B A11
+#define RIGHT_PHOTOTRANSISTOR_A A10
+#define RIGHT_PHOTOTRANSISTOR_B A12
 #define PHOTOTRANSISTOR_THRESHOLD 0.10
 // Serial Pointer
 
@@ -188,7 +190,6 @@ void setup(void) {
 
   // Serial.begin(9600);
   SerialCom->begin(115200);
-  // SerialCom->begin(115200);
   trackerServo.attach(SERVO_PIN);
   trackerServo.write(START_ANGLE);
   pinMode(TRIG_PIN, OUTPUT);
@@ -221,32 +222,40 @@ void setup(void) {
   delay(50);
 
 
-  // while (1){
-  //   float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-  //   float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-  //   Serial.print("Left Voltage ");
-  //   Serial.println(leftVoltage);
-  //   Serial.print("Right Voltage ");
-  //   Serial.println(rightVoltage);
-  //   delay(1000);
-  // }
+  while (1){
+    float VoltageA = readPhotoTransistor(LEFT_PHOTOTRANSISTOR_A);
+    float VoltageB = readPhotoTransistor(LEFT_PHOTOTRANSISTOR_B);
+    SerialCom->print("Left Voltage A: ");
+    SerialCom->println(VoltageA);
+    SerialCom->print("Left Voltage B: ");
+    SerialCom->println(VoltageB);
+
+    VoltageA = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR_A);
+    VoltageB = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR_B);
+   SerialCom->print("Right Voltage A: ");
+    SerialCom->println(VoltageA);
+    SerialCom->print("Right Voltage B: ");
+    SerialCom->println(VoltageB);
+    SerialCom->println("");
+    delay(1500);
+  }
 }
 
 void loop(void) {
-  // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-  // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+  // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR_A);
+  // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR_A);
   // SerialCom->print("leftVoltage  ");
   // SerialCom->print(leftVoltage);
   // SerialCom->print("rightVoltage  ");
   // SerialCom->println(rightVoltage);
-  ReadUltrasonic();
-  // SerialCom->println(front_distance);
-  ReadLeftFront();
-  ReadRightFront();
-  ReadLeft();
-  ReadRight();
-  ReadPhotoLeft();
-  ReadPhotoRight();
+  // ReadUltrasonic();
+  // // SerialCom->println(front_distance);
+  // ReadLeftFront();
+  // ReadRightFront();
+  // ReadLeft();
+  // ReadRight();
+  // ReadPhotoLeft();
+  // ReadPhotoRight();
 
   // delay(100);
   static STATE machine_state = INITIALISING;
@@ -311,8 +320,8 @@ STATE detect_fire() {
     previous_millis = millis();
     counter++;
     if (counter > 10) {
-      // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-      // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+      // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR_A);
+      // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR_A);
       ReadPhotoLeft();
       ReadPhotoRight();
       SerialCom->print("leftVoltage  ");
@@ -322,8 +331,8 @@ STATE detect_fire() {
       speed_val = 150;
       rotate_cw ? cw() : ccw();
       // cw();
-      if (leftPhotoVoltage > 0.16 && rightPhotoVoltage > 0.16) {
-        if (abs(leftPhotoVoltage - rightPhotoVoltage) < 0.4) {
+      if (leftPhotoVoltage > 0.35 && rightPhotoVoltage > 0.35) {
+        if (abs(leftPhotoVoltage - rightPhotoVoltage) < 0.5) {
           stop();
           counter = 0;
           currentAngle = START_ANGLE;
@@ -344,8 +353,8 @@ STATE drive_to_fire() {
     previous_millis = millis();
     counter++;
     // Read light sensors
-    // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-    // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+    // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR_A);
+    // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR_A);
     ReadPhotoLeft();
     ReadPhotoRight();
     float difference = leftPhotoVoltage - rightPhotoVoltage;
@@ -360,7 +369,7 @@ STATE drive_to_fire() {
     ReadLeftFront();
     ReadRightFront();
     ReadUltrasonic();
-    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftPhotoVoltage < 0.75 && rightPhotoVoltage < 0.75)) {
+    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftPhotoVoltage < 3.5 && rightPhotoVoltage < 3.5)) {
       SerialCom->print("leftVoltage  ");
       SerialCom->print(leftPhotoVoltage);
       SerialCom->print("rightVoltage  ");
@@ -574,8 +583,8 @@ STATE extinguish() {
   stop();
   digitalWrite(fan_pin, HIGH);
 
-  // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-  // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+  // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR_A);
+  // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR_A);
   ReadPhotoLeft();
   ReadPhotoRight();
   SerialCom->print("leftVoltage: ");
@@ -760,45 +769,45 @@ float readPhotoTransistor(int analog_pin) {
 }
 // 1. Enhanced ReadPhotoLeft() with error handling
 void ReadPhotoLeft() {
-  // 1. Read ADC value
-  int rawPhotoValue = analogRead(LEFT_PHOTOTRANSISTOR);
+  // 1. Read ADC values from both phototransistors
+  int rawPhotoValueA = analogRead(LEFT_PHOTOTRANSISTOR_A);
+  int rawPhotoValueB = analogRead(LEFT_PHOTOTRANSISTOR_B);
 
-  // 2. Convert to voltage (assuming 5V reference)
-  float voltage = rawPhotoValue * (5.0 / 1023.0);
+  float voltageA = rawPhotoValueA * (5.0 / 1023.0);
+  float voltageB = rawPhotoValueB * (5.0 / 1023.0);
 
-  // 3. Validate voltage range
-  if (voltage < 0.0) voltage = 0.0;
-  if (voltage > 5.0) voltage = 5.0;
+  float voltage = (voltageA + voltageB) / 2.0;
 
-  // 4. Check for NaN before Kalman filter
+  voltage = constrain(voltage, 0.0, 5.0);
+
   if (isnan(leftPhotoVoltage) || isnan(last_var_photo_left)) {
-    leftPhotoVoltage = voltage;  // Reset to current reading
-    last_var_photo_left = 1.0;   // Reset variance
+    leftPhotoVoltage = voltage;   // Reset to current reading
+    last_var_photo_left = 1.0;    // Reset variance
   }
 
-  // 5. Kalman filtering with NaN check
   double est = Kalman_photo_left(voltage, leftPhotoVoltage);
 
   if (!isnan(est)) {
     leftPhotoVoltage = est;
   } else {
-    // Kalman returned NaN, use raw value and reset
     leftPhotoVoltage = voltage;
     last_var_photo_left = 1.0;  // Reset variance
   }
 }
 
+
 // 2. Enhanced ReadPhotoRight() with error handling
 void ReadPhotoRight() {
   // 1. Read ADC value
-  int rawPhotoValue = analogRead(RIGHT_PHOTOTRANSISTOR);
+  int rawPhotoValueA = analogRead(RIGHT_PHOTOTRANSISTOR_A);
+  int rawPhotoValueB = analogRead(RIGHT_PHOTOTRANSISTOR_B);  
 
-  // 2. Convert to voltage (assuming 5V reference)
-  float voltage = rawPhotoValue * (5.0 / 1023.0);
+  float voltageA = rawPhotoValueA * (5.0 / 1023.0);
+  float voltageB = rawPhotoValueB * (5.0 / 1023.0);
 
-  // 3. Validate voltage range
-  if (voltage < 0.0) voltage = 0.0;
-  if (voltage > 5.0) voltage = 5.0;
+  float voltage = (voltageA + voltageB) / 2.0;
+
+  voltage = constrain(voltage, 0.0, 5.0);
 
   // 4. Check for NaN before Kalman filter
   if (isnan(rightPhotoVoltage) || isnan(last_var_photo_right)) {
