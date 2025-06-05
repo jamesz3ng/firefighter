@@ -41,8 +41,8 @@ const int MOTOR_MAX = 2000;
 const float ACTIVATION_THRESHOLD = 0.5;  // Minimum voltage difference to react
 const int START_ANGLE = 90;              // Initial servo position
 const int ANGLE_INCREMENT = 2;           // Degree change per adjustment
-const int SERVO_MIN = 0;                 // Minimum servo angle
-const int SERVO_MAX = 180;               // Maximum servo angle
+const int SERVO_MIN = 45;                 // Minimum servo angle
+const int SERVO_MAX = 135;               // Maximum servo angle
 
 
 
@@ -266,8 +266,9 @@ void loop(void) {
   // Serial.println(rotate_cw);
   // Serial.println("hahahaha");
   // delay(1000);
+
   static STATE machine_state = INITIALISING;
-  // // Finite-state machine Code
+  // Finite-state machine Code
   switch (machine_state) {
     case INITIALISING:
       // Serial.println("INITIALISING....");
@@ -327,32 +328,41 @@ STATE detect_fire() {
     }
     previous_millis = millis();
     counter++;
+    ReadPhotoLeft();
+    ReadPhotoRight();
     if (counter > 10) {
       // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
       // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-      // ReadPhotoLeft();
-      // ReadPhotoRight();
-      float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-      float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-      // Serial.print("leftVoltage  ");
-      // Serial.print(leftPhotoVoltage);
-      // Serial.print("rightVoltage  ");
-      // Serial.println(rightPhotoVoltage);
+      
+      // float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+      // float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
       Serial.print("leftVoltage  ");
-      Serial.print(leftVoltage_nokalman);
+      Serial.print(leftPhotoVoltage);
       Serial.print("rightVoltage  ");
-      Serial.println(rightVoltage_nokalman);
+      Serial.println(rightPhotoVoltage);
+      // Serial.print("leftVoltage  ");
+      // Serial.print(leftVoltage_nokalman);
+      // Serial.print("rightVoltage  ");
+      // Serial.println(rightVoltage_nokalman);
       speed_val = 150;
       rotate_cw ? cw() : ccw();
       // cw();
-      if (leftVoltage_nokalman > 0.4 && rightVoltage_nokalman > 0.4) {
-        if (abs(leftVoltage_nokalman - rightVoltage_nokalman) < 0.3) {
+      if (leftPhotoVoltage > 0.4 && rightPhotoVoltage > 0.4) {
+        if (abs(leftPhotoVoltage - rightPhotoVoltage) < 0.4) {
           stop();
           counter = 0;
           currentAngle = START_ANGLE;
           return DRIVE_TO_FIRE;
         }
       }
+      // if (leftVoltage_nokalman > 0.4 && rightVoltage_nokalman > 0.4) {
+      //   if (abs(leftVoltage_nokalman - rightVoltage_nokalman) < 0.3) {
+      //     stop();
+      //     counter = 0;
+      //     currentAngle = START_ANGLE;
+      //     return DRIVE_TO_FIRE;
+      //   }
+      // }
     }
   }
   return DETECT_FIRE;
@@ -366,21 +376,23 @@ STATE drive_to_fire() {
   if (millis() - previous_millis > T) {
     
     previous_millis = millis();
+    ReadPhotoLeft();
+    ReadPhotoRight();
 
     counter++;
-    if (counter<5) {
-      Serial.print("Drive to fire");
-    }
+    // if (counter<5) {
+    //   Serial.print("Drive to fire");
+    // }
     if (counter>20) {
     // Read light sensors
     // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
     // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-    // ReadPhotoLeft();
-    // ReadPhotoRight();
-    float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-    float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+    
+    // float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+    // float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
 
-    float difference = leftVoltage_nokalman - rightVoltage_nokalman;
+    // float difference = leftVoltage_nokalman - rightVoltage_nokalman;
+      float difference = leftPhotoVoltage - rightPhotoVoltage;
     // if (counter < 10) {
     //   Serial.print("drive to fire  ");
     //   Serial.print("leftVoltage  ");
@@ -392,14 +404,28 @@ STATE drive_to_fire() {
     ReadLeftFront();
     ReadRightFront();
     ReadUltrasonic();
-    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftVoltage_nokalman < 4.5 && rightVoltage_nokalman < 4.5)) {
-      Serial.print("leftVoltage  ");
-      Serial.print(leftVoltage_nokalman);
-      Serial.print("rightVoltage  ");
-      Serial.println(rightVoltage_nokalman);
+    // if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftVoltage_nokalman < 4.5 && rightVoltage_nokalman < 4.5)) {
+    //   Serial.print("leftVoltage  ");
+    //   Serial.print(leftVoltage_nokalman);
+    //   Serial.print("rightVoltage  ");
+    //   Serial.println(rightVoltage_nokalman);
+    //   counter = 0;
+    //   return AVOID;
+    // }
+
+    if ((frontLeftDist < 10 || frontRightDist < 10 || front_distance < 10) && (leftPhotoVoltage < 4.7 && rightPhotoVoltage < 4.7)) {
+      // Serial.print("leftVoltage  ");
+      // Serial.print(leftVoltage_nokalman);
+      // Serial.print("rightVoltage  ");
+      // Serial.println(rightVoltage_nokalman);
+      // Serial.print("leftVoltage  ");
+      // Serial.print(leftPhotoVoltage);
+      // Serial.print("rightVoltage  ");
+      // Serial.println(rightPhotoVoltage);
       counter = 0;
       return AVOID;
     }
+
 
       // Only adjust if difference exceeds threshold
       if (difference > 0) {
@@ -407,31 +433,40 @@ STATE drive_to_fire() {
       } else {
         currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
       }
+
+      
       trackerServo.write(currentAngle);
 
       if (front_distance > 10) {
-        float correction_kp = 10.0;
+        float correction_kp = 5.0;
         float error = currentAngle - 90;
 
         float correction_factor = correction_kp * error;
 
-        Serial.print("leftVoltage  ");
-        Serial.print(leftVoltage_nokalman);
-        Serial.print("rightVoltage  ");
-        Serial.println(rightVoltage_nokalman);
-
-        // Serial.print("drive to fire  ");
-        // Serial.print("correction_factor  ");
-        // Serial.print(correction_factor);
         // Serial.print("leftVoltage  ");
-        // Serial.print(leftPhotoVoltage);
+        // Serial.print(leftVoltage_nokalman);
         // Serial.print("rightVoltage  ");
-        // Serial.println(rightPhotoVoltage);
-        speed_val = 150;
-        left_font_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        right_font_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
-        right_rear_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        // Serial.println(rightVoltage_nokalman);
+    //      float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+    // float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+
+      //   Serial.print("drive to fire  ");
+      //   Serial.print("correction_factor  ");
+      //   Serial.print(correction_factor);
+      //   Serial.print("leftVoltage  ");
+      //   Serial.print(leftPhotoVoltage);
+      //     Serial.print("left raw voltage  ");
+      // Serial.print(leftVoltage_nokalman);
+      //   Serial.print("rightVoltage  ");
+      //   Serial.print(rightPhotoVoltage);
+      
+      // Serial.print("right raw voltage  ");
+      // Serial.println(rightVoltage_nokalman);
+        // speed_val = 150;
+        left_font_motor.writeMicroseconds(constrain(1500 + 100 - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        left_rear_motor.writeMicroseconds(constrain(1500 + 100 - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_font_motor.writeMicroseconds(constrain(1500 - 100 - correction_factor, MOTOR_MIN, MOTOR_MAX));
+        right_rear_motor.writeMicroseconds(constrain(1500 - 100 - correction_factor, MOTOR_MIN, MOTOR_MAX));
 
       } else {
         stop();
@@ -456,6 +491,8 @@ STATE Avoid() {
     ReadUltrasonic();
     ReadLeftFront();
     ReadRightFront();
+    ReadPhotoLeft();
+    ReadPhotoRight();
     Serial.println("In AVOID.");
     // Serial.print("ultrasonic distance  ");
     // Serial.print(front_distance);
@@ -499,8 +536,9 @@ STATE Avoid() {
 STATE left() {
   static unsigned long previous_millis;
   static int counting_time = 0;
+
   rotate_cw = true;
-  Serial.println("IN LEFT ");
+  // Serial.println("IN LEFT ");
   if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
@@ -511,6 +549,8 @@ STATE left() {
     ReadRightFront();
     ReadLeft();
     ReadUltrasonic();
+        ReadPhotoLeft();
+    ReadPhotoRight();
     // Serial.print("ultrasonic distance  ");
     // Serial.print(front_distance);
     // Serial.print("  frontRightDist  ");
@@ -558,6 +598,8 @@ STATE right() {
     ReadRightFront();
     ReadRight();
     ReadUltrasonic();
+    ReadPhotoLeft();
+    ReadPhotoRight();
 
     if (!is_battery_voltage_OK()) {
       Serial.println("battery stop");
@@ -621,15 +663,15 @@ STATE extinguish() {
 
   // float leftVoltage = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
   // float rightVoltage = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-  float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
-  float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
-  // ReadPhotoLeft();
-  // ReadPhotoRight();
+  // float leftVoltage_nokalman = readPhotoTransistor(LEFT_PHOTOTRANSISTOR);
+  // float rightVoltage_nokalman = readPhotoTransistor(RIGHT_PHOTOTRANSISTOR);
+  ReadPhotoLeft();
+  ReadPhotoRight();
   Serial.print("leftVoltage: ");
-  Serial.print(leftVoltage_nokalman);
+  Serial.print(leftPhotoVoltage);
   Serial.print("  rightVoltage: ");
-  Serial.println(rightVoltage_nokalman);
-  if (leftVoltage_nokalman < 0.20 && rightVoltage_nokalman < 0.20) {
+  Serial.println(rightPhotoVoltage);
+  if (leftPhotoVoltage < 0.20 && rightPhotoVoltage < 0.20) {
     fire_extinguished += 1;
     Serial.print("fire extinguished: ");
     Serial.println(fire_extinguished);
