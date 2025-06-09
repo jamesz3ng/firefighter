@@ -1,6 +1,9 @@
 #include <Servo.h>  //Need for Servo pulse output
 #include <SoftwareSerial.h>
 
+// Investment thing
+// https://kernelwealth.co.nz/funds/kernel-high-growth-fund
+// schneider opens July
 
 enum STATE {
   INITIALISING,
@@ -10,7 +13,8 @@ enum STATE {
   CHECK_GYRO,
   STOPPED,
   LEFT,
-  RIGHT
+  RIGHT,
+  DRIVE_TO_FIRE
 };
 
 // Serial Data input pin
@@ -19,13 +23,25 @@ enum STATE {
 #define BLUETOOTH_TX 11
 #define STARTUP_DELAY 3  // Seconds
 SoftwareSerial BluetoothSerial(BLUETOOTH_RX, BLUETOOTH_TX);
-//Serial Pointer
 
-// HardwareSerial *SerialCom;
+#define SERVO_PIN 37
+#define LEFT_PHOTOTRANSISTOR A9
+#define RIGHT_PHOTOTRANSISTOR A10
+#define PHOTOTRANSISTOR_THRESHOLD 0.10
 
+// Fire detection parameters
+const float FIRE_DETECTION_THRESHOLD = 0.25;  // Minimum voltage to detect fire
+const float FIRE_ALIGNMENT_THRESHOLD = 0.5;   // Max difference for fire alignment
+const float ACTIVATION_THRESHOLD = 0.5;       // Minimum voltage difference to react
+const int START_ANGLE = 90;                   // Initial servo position
+const int ANGLE_INCREMENT = 1;                // Degree change per adjustment
+const int SERVO_MIN = 0;                      // Minimum servo angle
+const int SERVO_MAX = 180;                    // Maximum servo angle
+
+// Serial Pointer
 SoftwareSerial *SerialCom;
 
-//Default motor control pins
+// Default motor control pins
 const byte left_front = 46;
 const byte left_rear = 47;
 const byte right_rear = 51;
@@ -37,7 +53,7 @@ Servo right_rear_motor;  // create servo object to control Vex Motor Controller 
 Servo right_font_motor;  // create servo object to control Vex Motor Controller 29
 int speed_val = 200;
 
-//Default ultrasonic ranging sensor pins, these pins are defined my the Shield
+// Default ultrasonic ranging sensor pins, these pins are defined my the Shield
 const int TRIG_PIN = 48;
 const int ECHO_PIN = 49;
 // Anything over 400 cm (23200 us pulse) is "out of range". Hit:If you decrease to this the ranging sensor but the timeout is short, you may not need to read up to 4meters.
@@ -48,7 +64,7 @@ double process_noise_ultrasonic = 1;
 double sensor_noise_ultrasonic = 1;  // Change the value of sensor noise to get different KF performance
 
 // Gyro
-int gyroPin = A14;              //define the pin that gyro is connected
+int gyroPin = A14;              // define the pin that gyro is connected
 int T = 100;                    // T is the time of one loop
 int gyroSensorValue = 0;        // read out value of sensor
 float gyroSupplyVoltage = 5;    // supply voltage for gyro
@@ -59,23 +75,23 @@ float gyroRate = 0;             // read out value of sensor in voltage
 float currentAngle = 0;         // current angle calculated by angular velocity integral on
 
 // IR
-const int rightFrontIrPin = A12;   // Analog input pin for the sensor's output
-int rightIrSensorValue = 0;   // Variable to store the sensor reading
-float rightIrDistance = 0.0;  // Variable to store the calculated distance
+const int rightFrontIrPin = A1;  // Analog input pin for the sensor's output
+int rightIrSensorValue = 0;       // Variable to store the sensor reading
+float rightIrDistance = 0.0;      // Variable to store the calculated distance
 double frontRightDist = 0;
 double last_var_ir_right = 1;
 double process_noise_ir_right = 1;
 double sensor_noise_ir_right = 1;  // Change the value of sensor noise to get different KF performance
 
-const int leftFrontIrPin = A8;    // Analog input pin for the sensor's output
-int leftIrSensorValue = 0;   // Variable to store the sensor reading
-float leftIrDistance = 0.0;  // Variable to store the calculated distance
+const int leftFrontIrPin = A0;  // Analog input pin for the sensor's output
+int leftIrSensorValue = 0;      // Variable to store the sensor reading
+float leftIrDistance = 0.0;     // Variable to store the calculated distance
 double frontLeftDist = 0;
 double last_var_ir_left = 1;
 double process_noise_ir_left = 1;
 double sensor_noise_ir_left = 1;  // Change the value of sensor noise to get different KF performance
 
-const int rightIrPin = A7;    // Analog input pin for the sensor's output
+const int rightIrPin = A3;   // Analog input pin for the sensor's output
 int backIrSensorValue = 0;   // Variable to store the sensor reading
 float backIrDistance = 0.0;  // Variable to store the calculated distance
 double rightDist = 0;
@@ -84,7 +100,7 @@ double process_noise_ir_back = 1;
 double sensor_noise_ir_back = 1;  // Change the value of sensor noise to get different KF performance
 float target_dist = 0;
 
-const int leftIrPin = A10;   // Analog input pin for the sensor's output
+const int leftIrPin = A2;        // Analog input pin for the sensor's output
 int shortleftIrSensorValue = 0;   // Variable to store the sensor reading
 float shortleftIrDistance = 0.0;  // Variable to store the calculated distance
 double leftDist = 0;
@@ -92,6 +108,10 @@ double last_var_ir_short_left = 1;
 double process_noise_ir_short_left = 1;
 double sensor_noise_ir_short_left = 1;
 
+int current_servo_angle = 45;
+
+Servo myservo;
+Servo trackerServo;  // Fire tracking servo
 
 // Function prototypes
 void calibrateGyro();
@@ -117,11 +137,16 @@ double Kalman_ir_right(double rawdata, double prev_est);
 double Kalman_ir_left(double rawdata, double prev_est);
 double Kalman_ir_back(double rawdata, double prev_est);
 double Kalman_ir_short_left(double rawdata, double prev_est);
+float getVoltage(int analog_pin);
 STATE initialising();
 STATE stopped();
 STATE Avoid();
 STATE extinguish();
 STATE check_gyro();
+STATE detect_fire();
+STATE drive_to_fire();
+STATE left();
+STATE right();
 
 void setup(void) {
 
@@ -129,31 +154,55 @@ void setup(void) {
   SerialCom = &BluetoothSerial;
   // SerialCom = &Serial;
 
-
-  SerialCom->begin(115200);
+  Serial.begin(115200);
+  BluetoothSerial.begin(9600);
   delaySeconds(STARTUP_DELAY);
-  SerialCom->println("MECHENG706");
+  SerialCom->println("MECHENG706 Firefighter Robot");
   SerialCom->println("Setup....");
-  calibrateGyro();
+  
+  // Initialize fire tracking servo
+  trackerServo.attach(SERVO_PIN);
+  trackerServo.write(START_ANGLE);
+  
+  // Initialize ultrasonic pins
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+    calibrateGyro();
+  
+  // Initialize distance variables to prevent NaN
+  rightDist = 30.0;  // reasonable default
+  frontLeftDist = 30.0;
+  frontRightDist = 30.0;
+  leftDist = 30.0;
+  front_distance = 30.0;
 
-  delay(2000);
+  // Initialize Kalman variances
+  last_var_ir_back = 1.0;
+  last_var_ir_left = 1.0;
+  last_var_ir_right = 1.0;
+  last_var_ir_short_left = 1.0;
+  last_var_ultrasonic = 1.0;
+  
+  delay(50);
 }
 
 void loop(void) {
 
   static STATE machine_state = INITIALISING;
-  //Finite-state machine Code
+  // Finite-state machine Code
   switch (machine_state) {
     case INITIALISING:
-      // SerialCom->println("INITIALISING....");
+      SerialCom->println("INITIALISING....");
       machine_state = initialising();
       break;
     case DETECT_FIRE:
       machine_state = detect_fire();
-
-    break;
+      break;
+    case DRIVE_TO_FIRE:
+      machine_state = drive_to_fire();
+      break;
     case STOPPED:
-      // SerialCom->println("STOPPED....");
+      SerialCom->println("STOPPED....");
       machine_state = stopped();
       break;
     case EXTINGUISH:
@@ -170,9 +219,9 @@ void loop(void) {
       break;
     case CHECK_GYRO:
       machine_state = check_gyro();
+      break;
   };
 }
-
 
 //-------------------------------States---------------------------------
 
@@ -184,64 +233,199 @@ STATE initialising() {
     ReadUltrasonic();
     delay(100);
   }
-  // return CHECK_GYRO;  // Changed from RIGHT to SEARCH_WALL
-  return AVOID;
+  
+  SerialCom->println("Initialization complete, starting fire detection");
+  return DETECT_FIRE;  // Start with fire detection
 }
 
 STATE detect_fire() {
-  // TODO: look around until fire is found
+  static unsigned long previous_millis;
+  static unsigned int counter = 0;
 
-  // TODO: rotate to face the fire
+  if (millis() - previous_millis > T) {
+    previous_millis = millis();
+    counter++;
+    
+    if (!is_battery_voltage_OK())
+      return STOPPED;
 
-  // TODO: when facing the fire, return NAVIGATE
+    if (counter > 10) {
+      float leftVoltage = getVoltage(LEFT_PHOTOTRANSISTOR);
+      float rightVoltage = getVoltage(RIGHT_PHOTOTRANSISTOR);
 
+      SerialCom->print("Fire Detection - Left: ");
+      SerialCom->print(leftVoltage);
+      SerialCom->print("V, Right: ");
+      SerialCom->print(rightVoltage);
+      SerialCom->println("V");
+
+      // Rotate clockwise while searching for fire
+      cw();
+
+      // Check if fire is detected
+      if (leftVoltage > FIRE_DETECTION_THRESHOLD && rightVoltage > FIRE_DETECTION_THRESHOLD) {
+        if (abs(leftVoltage - rightVoltage) < FIRE_ALIGNMENT_THRESHOLD) {
+          SerialCom->println("Fire detected! Switching to drive to fire mode");
+          stop();
+          counter = 0;
+          return DRIVE_TO_FIRE;
+        }
+      }
+      
+      // If no fire found after full rotation, switch to navigation
+      if (counter > 100) {  // After significant search time
+        SerialCom->println("No fire detected, switching to navigation");
+        stop();
+        counter = 0;
+        return AVOID;
+      }
+    }
+  }
   return DETECT_FIRE;
+}
+
+STATE drive_to_fire() {
+  static unsigned long previous_millis;
+  static int currentAngle = START_ANGLE;  // Preserve angle between iterations
+  static unsigned int counter = 0;
+  
+  if (millis() - previous_millis > T) {
+    previous_millis = millis();
+    counter++;
+    
+    if (!is_battery_voltage_OK())
+      return STOPPED;
+    
+    // Read light sensors
+    float leftVoltage = getVoltage(LEFT_PHOTOTRANSISTOR);
+    float rightVoltage = getVoltage(RIGHT_PHOTOTRANSISTOR);
+    float difference = leftVoltage - rightVoltage;
+
+    ReadUltrasonic();
+
+    if (counter > 10) {
+      SerialCom->print("Tracking Fire - Left: ");
+      SerialCom->print(leftVoltage);
+      SerialCom->print("V, Right: ");
+      SerialCom->print(rightVoltage);
+      SerialCom->print("V, Distance: ");
+      SerialCom->print(front_distance);
+      SerialCom->println("cm");
+
+      // Only adjust servo if difference exceeds threshold
+      if (abs(difference) > ACTIVATION_THRESHOLD) {
+        if (difference > 0) {
+          currentAngle = constrain(currentAngle + ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+        } else {
+          currentAngle = constrain(currentAngle - ANGLE_INCREMENT, SERVO_MIN, SERVO_MAX);
+        }
+        trackerServo.write(currentAngle);
+      }
+
+      // Check if we're close enough to extinguish
+      if (front_distance <= 10) {
+        SerialCom->println("Close to fire, switching to extinguish mode");
+        stop();
+        counter = 0;
+        return EXTINGUISH;
+      }
+      
+      // Drive towards fire with steering correction
+      if (front_distance > 10) {
+        float correction_kp = 3.0;  // Reduced gain for smoother control
+        float error = currentAngle - 90;  // Error from center position
+        float correction_factor = correction_kp * error;
+
+        // Apply motor control with fire tracking correction
+        left_font_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, 1000, 2000));
+        left_rear_motor.writeMicroseconds(constrain(1500 + speed_val - correction_factor, 1000, 2000));
+        right_font_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, 1000, 2000));
+        right_rear_motor.writeMicroseconds(constrain(1500 - speed_val - correction_factor, 1000, 2000));
+      }
+      
+      // Check if fire signal is lost
+      if (leftVoltage < FIRE_DETECTION_THRESHOLD && rightVoltage < FIRE_DETECTION_THRESHOLD) {
+        SerialCom->println("Fire signal lost, returning to detection mode");
+        stop();
+        counter = 0;
+        return DETECT_FIRE;
+      }
+    }
+  }
+  return DRIVE_TO_FIRE;
 }
 
 STATE Avoid() {
   static unsigned long previous_millis;
-  if (millis() - previous_millis > T) {  //Arduino style 100ms timed execution statement
+  if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
-    if (!is_battery_voltage_OK()) return STOPPED;
-    
+    if (!is_battery_voltage_OK())
+      return STOPPED;
+
     ReadUltrasonic();
     ReadLeftFront();
     ReadRightFront();
+    SerialCom->println("Navigating...");
+    SerialCom->print("Ultrasonic distance: ");
+    SerialCom->println(front_distance);
 
-    if (frontLeftDist <20) {
+    // Check for fire while navigating
+    float leftVoltage = getVoltage(LEFT_PHOTOTRANSISTOR);
+    float rightVoltage = getVoltage(RIGHT_PHOTOTRANSISTOR);
+    
+    if (leftVoltage > FIRE_DETECTION_THRESHOLD || rightVoltage > FIRE_DETECTION_THRESHOLD) {
+      SerialCom->println("Fire detected during navigation, switching to fire detection");
+      stop();
+      return DETECT_FIRE;
+    }
+
+    if (frontLeftDist < 20) {
+      stop();
       return RIGHT;
-    } else if (frontRightDist<20) {
+    } else if (frontRightDist < 20) {
+      SerialCom->println("Right IR hit");
+      stop();
       return LEFT;
-    } else if (front_distance) {
+    } else if (front_distance < 20) {
+      SerialCom->println("Ultrasonic hit");
+      stop();
       return LEFT;
     } else {
-    forward();
+      SerialCom->println("Moving forward");
+      forward();
     }
   }
   return AVOID;
-
-  // TODO: find fire
 }
 
 STATE left() {
   static unsigned long previous_millis;
-  if (millis() - previous_millis > T) {  //Arduino style 100ms timed execution statement
+  static int counting_time = 0;
+  if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
-    if (!is_battery_voltage_OK()) return STOPPED;
-    
+    if (!is_battery_voltage_OK())
+      return STOPPED;
+
     ReadLeftFront();
     ReadRightFront();
     ReadLeft();
     ReadUltrasonic();
+    SerialCom->print("Left maneuver - Ultrasonic distance: ");
+    SerialCom->println(front_distance);
 
-    if (leftDist <15) {
+    if (leftDist < 15) {
+      counting_time = 0;
       return RIGHT;
     }
 
-    if ((frontLeftDist<20) && (frontRightDist<20) && (front_distance<20)) {
-      return AVOID;
+    if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
+      counting_time++;
+      if (counting_time > 5) {
+        counting_time = 0;
+        return AVOID;
+      }
     } else {
       strafe_left();
     }
@@ -251,21 +435,32 @@ STATE left() {
 
 STATE right() {
   static unsigned long previous_millis;
-  if (millis() - previous_millis > T) {  //Arduino style 100ms timed execution statement
+  static int counting_time = 0;
+  if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
-    if (!is_battery_voltage_OK()) return STOPPED;
-    
+    if (!is_battery_voltage_OK())
+      return STOPPED;
+
     ReadLeftFront();
     ReadRightFront();
     ReadRight();
     ReadUltrasonic();
+    SerialCom->print("Right maneuver - Ultrasonic distance: ");
+    SerialCom->println(front_distance);
 
-    if (rightDist <15) {
+    if (rightDist < 15) {
+      counting_time = 0;
       return LEFT;
     }
-    if ((frontLeftDist<20) && (frontRightDist<20) && (front_distance<20)) {
-      return AVOID;
+    
+    if ((frontLeftDist > 20) && (frontRightDist > 20) && (front_distance > 20)) {
+      counting_time++;
+      if (counting_time > 5) {
+        counting_time = 0;
+        SerialCom->println("Returning to navigation");
+        return AVOID;
+      }
     } else {
       strafe_right();
     }
@@ -274,18 +469,43 @@ STATE right() {
 }
 
 STATE extinguish() {
-  // TODO: turn the fan on for 10 seconds
-
-  // TODO: turn the fan off if fire is extinguished before 10 seconds
-
-  // TODO: find another fire, or stop the robot if two fire have been extinguished.
+  static unsigned long extinguish_start_time = 0;
+  static bool extinguishing = false;
+  
+  if (!extinguishing) {
+    SerialCom->println("Starting fire extinguishing sequence");
+    extinguish_start_time = millis();
+    extinguishing = true;
+    // TODO: Turn on fan/extinguisher here
+    stop();  // Stop moving while extinguishing
+  }
+  
+  // Check if fire is extinguished by monitoring light levels
+  float leftVoltage = getVoltage(LEFT_PHOTOTRANSISTOR);
+  float rightVoltage = getVoltage(RIGHT_PHOTOTRANSISTOR);
+  
+  if (leftVoltage < FIRE_DETECTION_THRESHOLD && rightVoltage < FIRE_DETECTION_THRESHOLD) {
+    SerialCom->println("Fire extinguished! Searching for next fire");
+    extinguishing = false;
+    // TODO: Turn off fan/extinguisher here
+    return DETECT_FIRE;  // Look for another fire
+  }
+  
+  // Timeout after 10 seconds
+  if (millis() - extinguish_start_time > 10000) {
+    SerialCom->println("Extinguish timeout, returning to fire detection");
+    extinguishing = false;
+    // TODO: Turn off fan/extinguisher here
+    return DETECT_FIRE;
+  }
+  
   return EXTINGUISH;
 }
-
 
 //----------------------STOPPED STATE------------------------
 STATE stopped() {
   disable_motors();
+  trackerServo.detach();
   return STOPPED;
 }
 
@@ -293,22 +513,23 @@ STATE check_gyro() {
   static unsigned long previous_millis;
   static int counter = 0;
 
-  if (millis() - previous_millis > T) {  //Arduino style 100ms timed execution statement
+  if (millis() - previous_millis > T) {  // Arduino style 100ms timed execution statement
     previous_millis = millis();
 
-    if (!is_battery_voltage_OK()) return STOPPED;
+    if (!is_battery_voltage_OK())
+      return STOPPED;
 
     ReadGyro();
 
     counter++;
 
     if (counter > 10) {
-      // SerialCom->println(currentAngle);
+      SerialCom->print("Gyro angle: ");
+      SerialCom->println(currentAngle);
     }
   }
   return CHECK_GYRO;
 }
-
 
 //-------------------------------Helper Functions---------------------------------
 
@@ -317,6 +538,11 @@ void delaySeconds(int TimedDelaySeconds) {
   for (int i = 0; i < TimedDelaySeconds; i++) {
     delay(1000);
   }
+}
+
+float getVoltage(int analog_pin) {
+  float volts = analogRead(analog_pin) * 5.0 / 1024.0;
+  return volts;
 }
 
 //----------------------Kalman Filter------------------------
@@ -379,9 +605,9 @@ boolean is_battery_voltage_OK() {
 
   int Lipo_level_cal;
   int raw_lipo;
-  //the voltage of a LiPo cell depends on its chemistry and varies from about 3.5V (discharged) = 717(3.5V Min) https://oscarliang.com/lipo-battery-guide/
-  //to about 4.20-4.25V (fully charged) = 860(4.2V Max)
-  //Lipo Cell voltage should never go below 3V, So 3.5V is a safety factor.
+  // the voltage of a LiPo cell depends on its chemistry and varies from about 3.5V (discharged) = 717(3.5V Min) https://oscarliang.com/lipo-battery-guide/
+  // to about 4.20-4.25V (fully charged) = 860(4.2V Max)
+  // Lipo Cell voltage should never go below 3V, So 3.5V is a safety factor.
   raw_lipo = analogRead(A0);
   Lipo_level_cal = (raw_lipo - 717);
   Lipo_level_cal = Lipo_level_cal * 100;
@@ -451,7 +677,7 @@ void ReadUltrasonic() {
 
   // Calculate distance in centimeters. The constants
   // are found in the datasheet, and calculated from the assumed speed
-  //of sound in air at sea level (~340 m/s).
+  // of sound in air at sea level (~340 m/s).
   double distance = pulse_width / 58.0;
 
   // medianFilter2.AddValue(distance);
@@ -468,10 +694,34 @@ void ReadRightFront() {
 
   // Calculate the distance using the voltage (for Sharp GP2Y0A21YK0F, this is a typical formula)
   // Note: this is a rough estimate based on sensor's datasheet.
-  rightIrDistance = (25.5 * pow(voltage, -1.10));
+  if (voltage < 0.1) {
+    rightIrDistance = frontRightDist;  // fallback to last estimate
+  } else {
+    rightIrDistance = (25.5 * pow(voltage, -1.10));
+    
+    // Clamp distance to reasonable range
+    if (rightIrDistance > 100.0) {
+      rightIrDistance = 100.0;
+    } else if (rightIrDistance < 5.0) {
+      rightIrDistance = 5.0;
+    }
+  }
 
+  // Check for NaN before Kalman filter
+  if (isnan(frontRightDist) || isnan(last_var_ir_right)) {
+    frontRightDist = rightIrDistance;  // Reset to current reading
+    last_var_ir_right = 1.0;           // Reset variance
+  }
+
+  // Kalman filter with NaN check
   double est = Kalman_ir_right(rightIrDistance, frontRightDist);
-  frontRightDist = est;
+
+  if (!isnan(est)) {
+    frontRightDist = est;
+  } else {
+    frontRightDist = rightIrDistance;
+    last_var_ir_right = 1.0;  // Reset variance
+  }
 }
 
 void ReadLeftFront() {
@@ -482,10 +732,34 @@ void ReadLeftFront() {
 
   // Calculate the distance using the voltage (for Sharp GP2Y0A21YK0F, this is a typical formula)
   // Note: this is a rough estimate based on sensor's datasheet.
-  leftIrDistance = (25.5 * pow(voltage, -1.10));
+  if (voltage < 0.1) {
+    leftIrDistance = frontLeftDist;  // fallback to last estimate
+  } else {
+    leftIrDistance = (25.5 * pow(voltage, -1.10));
+    
+    // Clamp distance to reasonable range
+    if (leftIrDistance > 100.0) {
+      leftIrDistance = 100.0;
+    } else if (leftIrDistance < 5.0) {
+      leftIrDistance = 5.0;
+    }
+  }
 
+  // Check for NaN before Kalman filter
+  if (isnan(frontLeftDist) || isnan(last_var_ir_left)) {
+    frontLeftDist = leftIrDistance;  // Reset to current reading
+    last_var_ir_left = 1.0;          // Reset variance
+  }
+
+  // Kalman filter with NaN check
   double est = Kalman_ir_left(leftIrDistance, frontLeftDist);
-  frontLeftDist = est;
+
+  if (!isnan(est)) {
+    frontLeftDist = est;
+  } else {
+    frontLeftDist = leftIrDistance;
+    last_var_ir_left = 1.0;  // Reset variance
+  }
 }
 
 void ReadRight() {
@@ -498,7 +772,7 @@ void ReadRight() {
   // Note: this is a rough estimate based on sensor's datasheet.
   backIrDistance = 11.35795124 * pow(voltage, -0.7897);
 
-  double est = Kalman_ir_back(backIrDistance, sideRightDist);
+  double est = Kalman_ir_back(backIrDistance, rightDist);
   rightDist = est;
 }
 
@@ -511,14 +785,14 @@ void ReadLeft() {
 
   // 3. Compute raw distance OR fallback if voltage is too low
   if (voltage < 0.1) {
-    shortleftIrDistance = sideLeftDist;  // fallback to last estimate
+    shortleftIrDistance = leftDist;  // fallback to last estimate
   } else {
     shortleftIrDistance = 11.35795124 * pow(voltage, -0.7897);  // normal calculation
   }
 
   // 4. Kalman filter only if value is valid
   if (!isnan(shortleftIrDistance)) {
-    double est = Kalman_ir_left(shortleftIrDistance, sideLeftDist);
+    double est = Kalman_ir_left(shortleftIrDistance, leftDist);
     leftDist = est - 1.25;
   }
 }
@@ -535,22 +809,6 @@ double Kalman_ir_short_left(double rawdata, double prev_est) {  // Kalman Filter
   last_var_ir_short_left = a_post_var;
   return a_post_est;
 }
-
-
-// void Short_Left_IR_range2() {
-//   shortleftIrSensorValue = analogRead(shortleftIrPin);
-
-//   // Convert the sensor value to a voltage (assuming 5V reference voltage)
-//   float voltage = shortleftIrSensorValue * (5.0 / 1023.0);
-
-//   // Calculate the distance using the voltage (for Sharp GP2Y0A21YK0F, this is a typical formula)
-//   // Note: this is a rough estimate based on sensor's datasheet.
-//   shortleftIrDistance = (25.5 * pow(voltage, -1.10));
-
-//   double est = Kalman_ir_short_left(shortleftIrDistance, sideLeftDist);
-//   sideLeftDist = est;
-// }
-
 
 //----------------------Gyro------------------------
 void calibrateGyro() {
@@ -649,13 +907,13 @@ void cw() {
 void strafe_left() {
   left_font_motor.writeMicroseconds(1500 - speed_val);
   left_rear_motor.writeMicroseconds(1500 + speed_val);
-  right_rear_motor.writeMicroseconds(1500 - speed_val);
-  right_font_motor.writeMicroseconds(1500 + speed_val);
+  right_rear_motor.writeMicroseconds(1500 + speed_val);
+  right_font_motor.writeMicroseconds(1500 - speed_val);
 }
 
 void strafe_right() {
   left_font_motor.writeMicroseconds(1500 + speed_val);
   left_rear_motor.writeMicroseconds(1500 - speed_val);
-  right_rear_motor.writeMicroseconds(1500 + speed_val);
-  right_font_motor.writeMicroseconds(1500 - speed_val);
+  right_rear_motor.writeMicroseconds(1500 - speed_val);
+  right_font_motor.writeMicroseconds(1500 + speed_val);
 }
