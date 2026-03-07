@@ -23,9 +23,9 @@ An Arduino Mega-based robot that autonomously navigates an arena, detects fires 
 INITIALISING → DETECT_FIRE → DRIVE_TO_FIRE → EXTINGUISH
                     ↑               |              |
                     |               ↓              |
-                    +←←←←←←←←  AVOID  ←←←←←←←←←←+
+                    <--------- AVOID  ←-------------
                     |
-                    +→ STOPPED (after 2 fires extinguished)
+                    -→ STOPPED (after 2 fires extinguished)
 ```
 
 - **DETECT_FIRE**: Rotates in place, reads phototransistors. When both sensors read >0.4V with balanced readings, transitions to DRIVE_TO_FIRE.
