@@ -2,6 +2,10 @@
 
 An Arduino Mega-based robot that autonomously navigates an arena, detects fires using phototransistors, drives toward them, and extinguishes them with a fan. Built for MECHENG 706 at the University of Auckland.
 
+<img width="278" height="400"  alt="image" src="https://github.com/user-attachments/assets/add048ab-0c55-4051-8209-7250904a8914" />
+<img width="500" height="400"  alt="image" src="https://github.com/user-attachments/assets/b2664b76-76eb-49e0-a046-581605c04a10" />
+
+
 ## Hardware
 
 | Component | Details | Pins |
